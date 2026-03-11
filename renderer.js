@@ -3,6 +3,7 @@ let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
 let CORS_PROXY = "";
+const IS_ELECTRON = navigator.userAgent.includes('Electron');
 
 // Load saved config immediately so it overrides the defaults above
 (function loadConfigFromStorageEarly() {
@@ -16,7 +17,8 @@ let CORS_PROXY = "";
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
-    if (config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
+    // Never apply CORS proxy in Electron — it handles CORS natively
+    if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   } catch(e) {}
 })();
 const MAP = {
@@ -1054,7 +1056,7 @@ function loadConfigFromStorage() {
       }
       if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
       if (config.api_password) API_PASSWORD = config.api_password;
-      if (config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
+      if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
     } catch (e) {}
   }
 }
@@ -1170,7 +1172,7 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  CORS_PROXY = config.cors_proxy || '';
+  CORS_PROXY = IS_ELECTRON ? '' : (config.cors_proxy || '');
   
   alert('Configuration saved!');
   settingsModal.classList.remove('active');
@@ -1222,7 +1224,7 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  if (config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
+  if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   
   alert('Configuration applied!');
   settingsModal.classList.remove('active');
