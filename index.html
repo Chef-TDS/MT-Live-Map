@@ -1270,6 +1270,14 @@
       box-sizing: border-box;
     }
 
+    .settings-section input:-webkit-autofill,
+    .settings-section input:-webkit-autofill:hover,
+    .settings-section input:-webkit-autofill:focus {
+      -webkit-box-shadow: 0 0 0px 1000px #2a2a2a inset !important;
+      -webkit-text-fill-color: #fff !important;
+      caret-color: #fff;
+    }
+
     .settings-section input:focus,
     .settings-section textarea:focus {
       outline: none;
@@ -1732,7 +1740,7 @@
           <span>Area Size</span>
           <span id="hmRadiusVal">35</span>
         </div>
-        <input type="range" id="hmRadiusSlider" min="5" max="350" step="1" value="35" style="width:100%;accent-color:#ff6600;" />
+        <input type="range" id="hmRadiusSlider" min="5" max="120" step="1" value="35" style="width:100%;accent-color:#00b1e0;" />
       </div>
       <div class="heatmap-legend">
         <div class="hm-legend-title">Activity Level</div>
@@ -1878,10 +1886,6 @@
             <button class="toggle-blur" id="togglePassword">Show</button>
           </div>
         </div>
-        <div class="settings-section">
-          <label>CORS Proxy <span style="font-size:10px;color:#666;">(browser only — e.g. https://corsproxy.io/?)</span></label>
-          <input type="text" id="corsProxy" placeholder="Leave blank if server has CORS enabled" style="width:100%;box-sizing:border-box;" />
-        </div>
         <div class="modal-buttons">
           <button class="modal-btn modal-btn-primary" id="saveConfigBtn">Save Config</button>
           <button class="modal-btn modal-btn-secondary" id="cancelConfigBtn">Cancel</button>
@@ -1899,7 +1903,7 @@
           <button class="modal-btn modal-btn-primary" id="applyEncryptedBtn">Apply encrypted Config</button>
           <button class="modal-btn modal-btn-secondary" id="cancelEncryptedBtn">Cancel</button>
         </div>
-        <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 20px;">
+        <div id="exportConfigSection" style="margin-top: 20px; border-top: 1px solid #444; padding-top: 20px;">
           <label style="display: block; margin-bottom: 10px;">Or Export Current Config as Encrypted</label>
           <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
             <input type="checkbox" id="allowAllCheckbox" />
@@ -1951,7 +1955,7 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <script src="renderer.js?v=11"></script>
+  <script src="renderer.js?v=14"></script>
 
 </body>
 </html>
