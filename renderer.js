@@ -2,7 +2,6 @@ let API_PASSWORD = "aaac9f1b3f62";
 let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
-let CORS_PROXY = "";
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
 
 // Load saved config immediately so it overrides the defaults above
@@ -17,7 +16,6 @@ const IS_ELECTRON = navigator.userAgent.includes('Electron');
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
-    if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   } catch(e) {}
 })();
 const MAP = {
@@ -629,7 +627,7 @@ async function pollPlayers() {
   pendingUpdate = true;
   try {
     const target = `${API_URL}?password=${API_PASSWORD}`;
-    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${target}` : target);
+    const res = await fetch(target);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -763,7 +761,7 @@ async function sendChatMessage(message) {
     displayChatMessage(displayName, friendlyDisplay, true, isAnnouncement);
     const typeParam = isAnnouncement ? 'announce' : 'message';
     const url = `${CHAT_API_URL}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`;
-    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${url}` : url, { method: 'POST' });
+    const res = await fetch(url, { method: 'POST' });
     if (!res.ok) {
       console.warn(`Chat API response: ${res.status}`);
       displayChatMessage('System', `Failed to send message (HTTP ${res.status})`);
@@ -802,7 +800,7 @@ function trackSentMessage(text) {
 async function pollIncomingChat() {
   try {
     const chatTarget = `${CHAT_HISTORY_URL}?since=${lastChatId}`;
-    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${chatTarget}` : chatTarget);
+    const res = await fetch(chatTarget);
     if (!res.ok) {
       if (lastChatStatus !== 'error') {
         displayChatMessage('System', `Chat fetch failed (HTTP ${res.status})`);
@@ -1054,7 +1052,6 @@ function loadConfigFromStorage() {
       }
       if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
       if (config.api_password) API_PASSWORD = config.api_password;
-      if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
     } catch (e) {}
   }
 }
@@ -1078,8 +1075,6 @@ function populateManualFields() {
   document.getElementById('apiBaseUrl').value = config.api_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
-  const corsProxyEl = document.getElementById('corsProxy');
-  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
@@ -1145,12 +1140,10 @@ setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
-  const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
-    api_password: document.getElementById('apiPassword').value,
-    cors_proxy: (corsEl || {value:''}).value.trim()
+    api_password: document.getElementById('apiPassword').value
   };
 
 
@@ -1165,7 +1158,6 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  CORS_PROXY = IS_ELECTRON ? '' : config.cors_proxy || '';
   
   alert('Configuration saved!');
   settingsModal.classList.remove('active');
@@ -1184,7 +1176,6 @@ document.getElementById('resetConfigBtn').addEventListener('click', () => {
   API_URL = '';
   CHAT_API_URL = '';
   CHAT_HISTORY_URL = '';
-  CORS_PROXY = '';
   // Clear all player markers from the map
   Object.keys(markers).forEach(id => {
     map.removeLayer(markers[id]);
@@ -1218,7 +1209,6 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   
   alert('Configuration applied!');
   settingsModal.classList.remove('active');
