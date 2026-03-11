@@ -724,6 +724,21 @@
       background: #ff9500;
     }
 
+    #exportColorsBtn, #importColorsBtn {
+      padding: 6px 8px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+    }
+
+    #exportColorsBtn:hover, #importColorsBtn:hover {
+      background: #ff9500;
+    }
+
     
     /* Coord display — always clear of icon sidebar; shifts right when a left panel is open */
     .leaflet-bottom.leaflet-left {
@@ -1751,6 +1766,8 @@
     <div class="color-add-area">
       <input type="text" id="hexColorInput" placeholder="#RRGGBB" maxlength="7" />
       <button id="addColorBtn">Add</button>
+      <button id="exportColorsBtn" title="Export colors to clipboard">📤</button>
+      <button id="importColorsBtn" title="Import colors from clipboard">📥</button>
     </div>
     <div class="color-selector-area" id="colorSelector"></div>
     <div class="chat-input-area">
@@ -1884,6 +1901,10 @@
         </div>
         <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 20px;">
           <label style="display: block; margin-bottom: 10px;">Or Export Current Config as Encrypted</label>
+          <label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;">
+            <input type="checkbox" id="allowAllCheckbox" />
+            <span style="color:#ccc;font-size:12px;">Allow All — recipients can use <strong style="color:#00b1e0">chat</strong> and <strong style="color:#00b1e0">location history</strong></span>
+          </label>
           <button class="copy-btn" id="exportConfigBtn">Export Config As Encrypted</button>
           <div class="config-display" id="exportedConfig" style="display: none; margin-top: 10px;"></div>
         </div>
@@ -1930,7 +1951,7 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <script src="renderer.js?v=6"></script>
+  <script src="renderer.js?v=11"></script>
 
 </body>
 </html>
