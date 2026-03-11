@@ -1,25 +1,33 @@
+const path = require('path');
 let API_PASSWORD = "aaac9f1b3f62";
 let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
-let CORS_PROXY = "";
-const IS_ELECTRON = navigator.userAgent.includes('Electron');
-
-// Load saved config immediately so it overrides the defaults above
-(function loadConfigFromStorageEarly() {
-  try {
-    const stored = localStorage.getItem('mtconfig');
-    if (!stored) return;
-    const config = JSON.parse(stored);
-    if (config.api_base) {
-      API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
-      CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
+try {
+  const possibleConfigPaths = [
+    path.join(__dirname, 'server-config.json'),
+    path.join(process.cwd(), 'server-config.json')
+  ];
+  for (const p of possibleConfigPaths) {
+    if (fs.existsSync(p)) {
+      try {
+        const cfg = JSON.parse(fs.readFileSync(p, 'utf8') || '{}');
+        if (cfg.api_password) API_PASSWORD = cfg.api_password;
+        if (cfg.api_base) {
+          API_URL = cfg.api_base.replace(/\/$/, '') + '/player/list';
+          CHAT_API_URL = cfg.api_base.replace(/\/$/, '') + '/chat';
+        }
+        if (cfg.chat_history_url) CHAT_HISTORY_URL = cfg.chat_history_url;
+        console.log('Loaded API config from', p);
+        break;
+      } catch (e) {
+        console.warn('Failed to parse config at', p, e?.message || e);
+      }
     }
-    if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-    if (config.api_password) API_PASSWORD = config.api_password;
-    if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
-  } catch(e) {}
-})();
+  }
+} catch (e) {
+  console.warn('Config load error', e?.message || e);
+}
 const MAP = {
   width: 6000,
   height: 8000
@@ -46,9 +54,44 @@ const map = L.map("map", {
   fadeAnimation: false  
 });
 const bounds = [[0, 0], [MAP.height, MAP.width]];
-const imageLayer = L.imageOverlay('map_new.png', bounds, {
+const fs = require('fs');
+let mapImagePath;
+console.log('__dirname:', __dirname);
+console.log('process.resourcesPath:', process.resourcesPath);
+console.log('process.cwd():', process.cwd());
+const possiblePaths = [
+  __dirname.includes('app.asar') 
+    ? path.join(__dirname.split('app.asar')[0], 'map_new.png')
+    : null,
+  process.resourcesPath 
+    ? path.join(process.resourcesPath, 'map_new.png')
+    : null,
+  path.join(__dirname, '..', 'map_new.png'),
+  path.join(__dirname, '..', '..', 'map_new.png'),
+  path.join(process.cwd(), 'map_new.png'),
+  path.join(__dirname, 'map_new.png'),
+].filter(Boolean); 
+console.log('Trying paths in order:');
+possiblePaths.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
+for (const testPath of possiblePaths) {
+  console.log('Checking:', testPath);
+  if (fs.existsSync(testPath)) {
+    mapImagePath = testPath;
+    console.log('✓ FOUND MAP at:', mapImagePath);
+    break;
+  } else {
+    console.log('✗ Not found');
+  }
+}
+if (!mapImagePath) {
+  console.error('ERROR: Could not find map_new.png in any location!');
+  console.error('Please ensure map_new.png is in your project root before building.');
+  mapImagePath = path.join(__dirname, 'map_new.png'); 
+}
+console.log('Final map path:', mapImagePath);
+const imageLayer = L.imageOverlay(mapImagePath, bounds, {
   opacity: 1,
-  interactive: false,
+  interactive: false,  
   crossOrigin: false
 }).addTo(map);
 map.fitBounds(bounds);
@@ -89,8 +132,33 @@ map.on('mousemove', function(e) {
 map.on('mouseout', function() {
   coordDisplay._div.innerHTML = '<strong>Hover over map</strong>';
 });
+let iconPath;
+console.log('Looking for player icon...');
+const possibleIconPaths = [
+  __dirname.includes('app.asar') 
+    ? path.join(__dirname.split('app.asar')[0], 'assets', 'player-icon.png')
+    : null,
+  process.resourcesPath 
+    ? path.join(process.resourcesPath, 'assets', 'player-icon.png')
+    : null,
+  path.join(__dirname, '..', 'assets', 'player-icon.png'),
+  path.join(__dirname, '..', '..', 'assets', 'player-icon.png'),
+  path.join(process.cwd(), 'assets', 'player-icon.png'),
+  path.join(__dirname, 'assets', 'player-icon.png'),
+].filter(Boolean);
+for (const testPath of possibleIconPaths) {
+  if (fs.existsSync(testPath)) {
+    iconPath = testPath;
+    console.log('✓ FOUND ICON at:', iconPath);
+    break;
+  }
+}
+if (!iconPath) {
+  console.error('ERROR: Could not find player-icon.png!');
+  iconPath = path.join(__dirname, 'assets', 'player-icon.png');
+}
 const defaultIcon = L.icon({
-  iconUrl: 'assets/player-icon.png',
+  iconUrl: iconPath,
   iconSize: [30, 30],
   iconAnchor: [20, 15],
   popupAnchor: [0, -20]
@@ -499,9 +567,10 @@ map.on('dragend', () => { setTimeout(() => { _mapDragged = false; }, 50); });
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 const HEATMAP_STORAGE_KEY = 'mt_heatmap_alltime';
 const HEATMAP_CELL        = 50;
-const HEATMAP_RADIUS      = 35;
-const HEATMAP_BLUR        = 25;
-let   hmRadius            = HEATMAP_RADIUS;
+let   hmRadius            = 20;
+let   hmZoomBias          = 3.0;
+let   hmIntensityAuto     = false;
+let   hmIntensityCap      = 1.2;
 
 // Session data: { 'cx,cy': count }
 const hmSessionCells = {};
@@ -531,50 +600,142 @@ function saveAllTimeHeatmap() {
   try { localStorage.setItem(HEATMAP_STORAGE_KEY, JSON.stringify(hmAllTimeCells)); } catch(e) {}
 }
 
+// ── Custom single-canvas heatmap layer (no tile clipping) ─────────────────────
+const HeatmapLayer = L.Layer.extend({
+  initialize(cells) { this._cells = cells; this._rafId = null; },
 
-function buildHeatPoints(cells) {
-  const pts = [];
-  const counts = Object.values(cells);
-  if (counts.length === 0) return pts;
-  const maxCount = Math.max(...counts);
-  for (const [key, count] of Object.entries(cells)) {
-    const [cx, cy] = key.split(',').map(Number);
-    const wx = cx * HEATMAP_CELL;
-    const wy = cy * HEATMAP_CELL;
-    const { mapX, mapY } = worldToMap(wx, wy);
-    const intensity = Math.sqrt(count / maxCount);
-    pts.push([mapY, mapX, intensity]);
+  onAdd(map) {
+    this._map = map;
+    this._canvas = document.createElement('canvas');
+    this._canvas.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;image-rendering:auto;';
+    map.getPanes().overlayPane.appendChild(this._canvas);
+    map.on('moveend zoomend', this._scheduleRedraw, this);
+    this._scheduleRedraw();
+  },
+
+  onRemove(map) {
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+    map.getPanes().overlayPane.removeChild(this._canvas);
+    map.off('moveend zoomend', this._scheduleRedraw, this);
+  },
+
+  updateCells(cells) { this._cells = cells; this._scheduleRedraw(); },
+
+  _scheduleRedraw() {
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+    this._rafId = requestAnimationFrame(() => { this._rafId = null; this._redraw(); });
+  },
+
+  _palette: null,
+  _buildPalette() {
+    if (this._palette) return this._palette;
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 1;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, 256, 0);
+    g.addColorStop(0.00, '#000033');
+    g.addColorStop(0.20, '#0000ff');
+    g.addColorStop(0.40, '#00ffff');
+    g.addColorStop(0.60, '#ffff00');
+    g.addColorStop(0.80, '#ff6600');
+    g.addColorStop(1.00, '#ff0000');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 1);
+    this._palette = ctx.getImageData(0, 0, 256, 1).data;
+    return this._palette;
+  },
+
+  _redraw() {
+    const map    = this._map;
+    const canvas = this._canvas;
+    const size   = map.getSize();
+
+    // Work at 1/4 resolution for performance
+    const SCALE  = 4;
+    const W      = Math.ceil(size.x / SCALE);
+    const H      = Math.ceil(size.y / SCALE);
+    canvas.width  = W;
+    canvas.height = H;
+    canvas.style.width  = size.x + 'px';
+    canvas.style.height = size.y + 'px';
+
+    const topLeft = map.containerPointToLayerPoint([0, 0]);
+    L.DomUtil.setPosition(canvas, topLeft);
+
+    const ctx   = canvas.getContext('2d');
+    const cells = this._cells;
+    const keys  = Object.keys(cells);
+    if (!keys.length) return;
+
+    // hmRadius = screen pixels. hmZoomBias adds/removes pixels per zoom level.
+    // Keep both in screen space, then divide by SCALE for canvas coords.
+    const zoom        = map.getZoom();
+    const screenR     = Math.max(4, hmRadius + zoom * hmZoomBias * 10);
+    const r           = Math.max(1, Math.round(screenR / SCALE));
+
+    // Scale blob alpha inversely with area so large blobs don't saturate everything.
+    // Reference area = r of 10px canvas = pi*100; scale down as r^2 grows.
+    const REF_R      = 10;
+    const BLOB_ALPHA = Math.min(0.25, Math.max(0.01, 0.06 * (REF_R * REF_R) / (r * r)));
+    for (const key of keys) {
+      const [cx, cy] = key.split(',').map(Number);
+      const { mapX, mapY } = worldToMap(cx * HEATMAP_CELL, cy * HEATMAP_CELL);
+      const pt = map.latLngToContainerPoint([mapY, mapX]);
+      const px = pt.x / SCALE;
+      const py = pt.y / SCALE;
+
+      const grad = ctx.createRadialGradient(px, py, 0, px, py, r);
+      grad.addColorStop(0,   `rgba(0,0,0,${BLOB_ALPHA})`);
+      grad.addColorStop(0.6, `rgba(0,0,0,${BLOB_ALPHA * 0.3})`);
+      grad.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+    }
+
+    // Normalize: find actual max alpha, then stretch full 0→255 range
+    // so the colour spread always uses the complete palette.
+    const palette = this._buildPalette();
+    const img     = ctx.getImageData(0, 0, W, H);
+    const d       = img.data;
+
+    let maxA = 0;
+    for (let i = 3; i < d.length; i += 4) if (d[i] > maxA) maxA = d[i];
+    if (maxA === 0) return;
+
+    // In manual mode, cap is a % of maxA — so the top cap% of activity = red,
+    // everything else is stretched below. In auto mode cap=1.0 (full range).
+    const capA = hmIntensityAuto ? maxA : Math.max(1, maxA * hmIntensityCap);
+
+    for (let i = 0; i < d.length; i += 4) {
+      const a = d[i + 3];
+      if (a === 0) continue;
+      const norm = Math.min(255, Math.round((a / capA) * 255));
+      const idx  = norm * 4;
+      d[i]     = palette[idx];
+      d[i + 1] = palette[idx + 1];
+      d[i + 2] = palette[idx + 2];
+      d[i + 3] = Math.round(norm * 0.85);
+    }
+    ctx.putImageData(img, 0, 0);
   }
-  return pts;
-}
+});
 
 function refreshHeatmap() {
   if (hmLayer) { map.removeLayer(hmLayer); hmLayer = null; }
   if (!hmMode) return;
 
   const cells = hmMode === 'session' ? hmSessionCells : hmAllTimeCells;
-  const pts   = buildHeatPoints(cells);
   const total = Object.values(cells).reduce((a, b) => a + b, 0);
+  const zones = Object.keys(cells).length;
 
   document.getElementById('hmDataInfo').textContent =
-    pts.length > 0 ? `${pts.length.toLocaleString()} zones · ${total.toLocaleString()} samples` : 'No data yet';
+    zones > 0 ? `${zones.toLocaleString()} zones · ${total.toLocaleString()} samples` : 'No data yet';
 
-  if (pts.length === 0) return;
+  if (zones === 0) return;
 
-  const zoom         = map.getZoom();
-  const scaledRadius = Math.max(6, hmRadius * Math.pow(2, zoom - 1));
-  const scaledBlur   = Math.max(4, HEATMAP_BLUR * Math.pow(2, zoom - 1));
-
-  hmLayer = L.heatLayer(pts, {
-    radius:  scaledRadius,
-    blur:    scaledBlur,
-    max:     1.0,
-    gradient: { 0.0: '#000033', 0.2: '#0000ff', 0.4: '#00ffff', 0.6: '#ffff00', 0.8: '#ff6600', 1.0: '#ff0000' }
-  }).addTo(map);
+  hmLayer = new HeatmapLayer(cells);
+  hmLayer.addTo(map);
 }
-
-// Redraw on zoom to prevent canvas drift with CRS.Simple
-map.on('zoomend', () => { if (hmMode) refreshHeatmap(); });
 
 function setHeatmapMode(mode) {
   hmMode = mode;
@@ -588,7 +749,37 @@ document.getElementById('hmAllTimeBtn').addEventListener('click', () => setHeatm
 document.getElementById('hmRadiusSlider').addEventListener('input', function() {
   hmRadius = parseInt(this.value);
   document.getElementById('hmRadiusVal').textContent = hmRadius;
-  if (hmMode) refreshHeatmap();
+  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
+});
+document.getElementById('hmZoomSlider').addEventListener('input', function() {
+  hmZoomBias = parseFloat(this.value);
+  document.getElementById('hmZoomVal').textContent = this.value;
+  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
+});
+document.getElementById('hmIntensityAutoBtn').addEventListener('click', () => {
+  hmIntensityAuto = true;
+  document.getElementById('hmIntensityAutoBtn').classList.add('active');
+  document.getElementById('hmIntensityManualBtn').classList.remove('active');
+  document.getElementById('hmIntensityManualRow').style.display = 'none';
+  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
+});
+document.getElementById('hmIntensityManualBtn').addEventListener('click', () => {
+  hmIntensityAuto = false;
+  document.getElementById('hmIntensityManualBtn').classList.add('active');
+  document.getElementById('hmIntensityAutoBtn').classList.remove('active');
+  document.getElementById('hmIntensityManualRow').style.display = '';
+  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
+});
+document.getElementById('hmIntensitySlider').addEventListener('input', function() {
+  hmIntensityCap = parseFloat(this.value);
+  document.getElementById('hmIntensityVal').textContent = Math.round(hmIntensityCap * 100) + '%';
+  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
+});
+document.getElementById('hmAdvancedBtn').addEventListener('click', function() {
+  const panel = document.getElementById('hmAdvancedPanel');
+  const open  = panel.style.display !== 'none';
+  panel.style.display = open ? 'none' : '';
+  this.textContent = open ? '▶ Advanced' : '▼ Advanced';
 });
 document.getElementById('hmOffBtn').addEventListener('click', () => {
   setHeatmapMode(null);
@@ -606,7 +797,7 @@ document.getElementById('sidebarHeatmapBtn').addEventListener('click', () => {
 });
 
 // Periodically refresh heatmap layer so intensity stays current
-setInterval(() => { if (hmMode) refreshHeatmap(); }, 5000);
+setInterval(() => { if (hmMode) refreshHeatmap(); }, 60000);
 // Save all-time data before unload
 window.addEventListener('beforeunload', saveAllTimeHeatmap);
 
@@ -627,8 +818,7 @@ async function pollPlayers() {
   if (!isVisible || pendingUpdate) return;
   pendingUpdate = true;
   try {
-    const target = `${API_URL}?password=${API_PASSWORD}`;
-    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(target)}` : target);
+    const res = await fetch(`${API_URL}?password=${API_PASSWORD}`);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -752,7 +942,7 @@ async function sendChatMessage(message) {
     displayChatMessage(displayName, friendlyDisplay, true, isAnnouncement);
     const typeParam = isAnnouncement ? 'announce' : 'message';
     const url = `${CHAT_API_URL}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`;
-    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(url)}` : url, { method: 'POST' });
+    const res = await fetch(url, { method: 'POST' });
     if (!res.ok) {
       console.warn(`Chat API response: ${res.status}`);
       displayChatMessage('System', `Failed to send message (HTTP ${res.status})`);
@@ -805,8 +995,7 @@ function trackSentMessage(text) {
 }
 async function pollIncomingChat() {
   try {
-    const chatTarget = `${CHAT_HISTORY_URL}?since=${lastChatId}`;
-    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(chatTarget)}` : chatTarget);
+    const res = await fetch(`${CHAT_HISTORY_URL}?since=${lastChatId}`);
     if (!res.ok) {
       if (lastChatStatus !== 'error') {
         displayChatMessage('System', `Chat fetch failed (HTTP ${res.status})`);
@@ -1058,7 +1247,6 @@ function loadConfigFromStorage() {
       }
       if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
       if (config.api_password) API_PASSWORD = config.api_password;
-      if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
     } catch (e) {}
   }
 }
@@ -1075,22 +1263,29 @@ const closeSettingsBtn = document.getElementById('closeSettings');
 
 function populateManualFields() {
   const config = getCurrentConfig();
-  // Set type first, then value — some browsers clear value when type changes
-  document.getElementById('apiBaseUrl').type = 'password';
-  document.getElementById('chatHistoryUrl').type = 'password';
-  document.getElementById('apiPassword').type = 'password';
   document.getElementById('apiBaseUrl').value = config.api_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
-  const corsProxyEl = document.getElementById('corsProxy');
-  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
+  document.getElementById('apiPassword').type = 'password';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
+  document.getElementById('apiBaseUrl').type = 'password';
+  document.getElementById('chatHistoryUrl').type = 'password';
 }
 
 settingsBtn.addEventListener('click', () => {
-  populateManualFields();
+  // Clear manual fields so saved values are never exposed until the user
+  // explicitly opens the Manual tab
+  document.getElementById('apiBaseUrl').value = '';
+  document.getElementById('chatHistoryUrl').value = '';
+  document.getElementById('apiPassword').value = '';
+  document.getElementById('apiPassword').type = 'password';
+  document.getElementById('apiBaseUrl').type = 'password';
+  document.getElementById('chatHistoryUrl').type = 'password';
+  document.getElementById('togglePassword').textContent = 'Show';
+  document.getElementById('toggleBaseUrl').textContent = 'Show';
+  document.getElementById('toggleChatUrl').textContent = 'Show';
   settingsModal.classList.add('active');
 });
 
@@ -1112,8 +1307,6 @@ modalTabs.forEach(tab => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tabName + '-tab').classList.add('active');
-    // Populate fields when switching to manual tab
-    if (tabName === 'manual') populateManualFields();
   });
 });
 
@@ -1149,27 +1342,22 @@ setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
-  const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
-    api_password: document.getElementById('apiPassword').value,
-    cors_proxy: (corsEl || {value:''}).value.trim()
+    api_password: document.getElementById('apiPassword').value
   };
-
-
+  
   if (!config.api_base || !config.api_password) {
     alert('API Base URL and Password are required');
     return;
   }
   
   saveConfigToStorage(config);
-  const verify = JSON.parse(localStorage.getItem('mtconfig') || '{}');
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  CORS_PROXY = IS_ELECTRON ? '' : config.cors_proxy || '';
   
   alert('Configuration saved!');
   settingsModal.classList.remove('active');
@@ -1188,7 +1376,6 @@ document.getElementById('resetConfigBtn').addEventListener('click', () => {
   API_URL = '';
   CHAT_API_URL = '';
   CHAT_HISTORY_URL = '';
-  CORS_PROXY = '';
   // Clear all player markers from the map
   Object.keys(markers).forEach(id => {
     map.removeLayer(markers[id]);
@@ -1222,7 +1409,6 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   
   alert('Configuration applied!');
   settingsModal.classList.remove('active');
