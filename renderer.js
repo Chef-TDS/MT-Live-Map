@@ -18,7 +18,8 @@ const IS_ELECTRON = navigator.userAgent.includes('Electron');
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
     // Never apply CORS proxy in Electron — it handles CORS natively
-    if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = sanitizeCorsProxy(config.cors_proxy);
+    // (sanitizeCorsProxy not defined yet, raw assign is fine — late load will sanitize)
+    if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   } catch(e) {}
 })();
 const MAP = {
@@ -1090,17 +1091,18 @@ const closeSettingsBtn = document.getElementById('closeSettings');
 
 function populateManualFields() {
   const config = getCurrentConfig();
+  // Set type first, then value — some browsers clear value when type changes
+  document.getElementById('apiBaseUrl').type = 'password';
+  document.getElementById('chatHistoryUrl').type = 'password';
+  document.getElementById('apiPassword').type = 'password';
   document.getElementById('apiBaseUrl').value = config.api_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
   const corsProxyEl = document.getElementById('corsProxy');
   if (corsProxyEl) corsProxyEl.value = sanitizeCorsProxy(config.cors_proxy || '');
-  document.getElementById('apiPassword').type = 'password';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
-  document.getElementById('apiBaseUrl').type = 'password';
-  document.getElementById('chatHistoryUrl').type = 'password';
 }
 
 settingsBtn.addEventListener('click', () => {
@@ -1163,13 +1165,16 @@ setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
+  const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
     api_password: document.getElementById('apiPassword').value,
-    cors_proxy: sanitizeCorsProxy((document.getElementById('corsProxy') || {value:''}).value.trim())
+    cors_proxy: sanitizeCorsProxy((corsEl || {value:''}).value.trim())
   };
-  
+
+  alert('DEBUG\ncorsProxy element found: ' + !!corsEl + '\nRaw field value: [' + (corsEl ? corsEl.value : 'NO ELEMENT') + ']\nSanitized: [' + config.cors_proxy + ']');
+
   if (!config.api_base || !config.api_password) {
     alert('API Base URL and Password are required');
     return;
@@ -1199,6 +1204,7 @@ document.getElementById('resetConfigBtn').addEventListener('click', () => {
   API_URL = '';
   CHAT_API_URL = '';
   CHAT_HISTORY_URL = '';
+  CORS_PROXY = '';
   // Clear all player markers from the map
   Object.keys(markers).forEach(id => {
     map.removeLayer(markers[id]);
