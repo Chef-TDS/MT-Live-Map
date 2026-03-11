@@ -3,6 +3,11 @@ let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
+// GitHub Pages is HTTPS; the game server is plain HTTP.
+// Route through a CORS proxy automatically when running in a browser.
+const CORS_PROXY = IS_ELECTRON ? '' : 'https://corsproxy.io/?url=';
+// GitHub Pages is HTTPS; the game server is plain HTTP.
+// Route through a CORS proxy automatically when running in a browser.
 
 // Load saved config immediately so it overrides the defaults above
 (function loadConfigFromStorageEarly() {
@@ -627,7 +632,7 @@ async function pollPlayers() {
   pendingUpdate = true;
   try {
     const target = `${API_URL}?password=${API_PASSWORD}`;
-    const res = await fetch(target);
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(target)}` : target);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -764,7 +769,7 @@ async function sendChatMessage(message) {
     displayChatMessage(displayName, friendlyDisplay, true, isAnnouncement);
     const typeParam = isAnnouncement ? 'announce' : 'message';
     const url = `${CHAT_API_URL}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`;
-    const res = await fetch(url, { method: 'POST' });
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(url)}` : url, { method: 'POST' });
     if (!res.ok) {
       console.warn(`Chat API response: ${res.status}`);
       displayChatMessage('System', `Failed to send message (HTTP ${res.status})`);
@@ -800,7 +805,7 @@ function trackSentMessage(text) {
 async function pollIncomingChat() {
   try {
     const chatTarget = `${CHAT_HISTORY_URL}?since=${lastChatId}`;
-    const res = await fetch(chatTarget);
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(chatTarget)}` : chatTarget);
     if (!res.ok) {
       if (lastChatStatus !== 'error') {
         displayChatMessage('System', `Chat fetch failed (HTTP ${res.status})`);
@@ -1073,6 +1078,8 @@ function populateManualFields() {
   document.getElementById('apiBaseUrl').value = config.api_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
+  const corsProxyEl = document.getElementById('corsProxy');
+  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
@@ -1138,10 +1145,12 @@ setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
+  const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
-    api_password: document.getElementById('apiPassword').value
+    api_password: document.getElementById('apiPassword').value,
+    cors_proxy: (corsEl || {value:''}).value.trim()
   };
 
 
