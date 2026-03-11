@@ -5,7 +5,8 @@ let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
 // GitHub Pages is HTTPS; the game server is plain HTTP.
 // Route through a CORS proxy automatically when running in a browser.
-const CORS_PROXY = IS_ELECTRON ? '' : 'https://corsproxy.io/?url=';
+// allorigins works with raw IP:port addresses unlike corsproxy.io
+const CORS_PROXY = IS_ELECTRON ? '' : 'https://api.allorigins.win/raw?url=';
 // GitHub Pages is HTTPS; the game server is plain HTTP.
 // Route through a CORS proxy automatically when running in a browser.
 
