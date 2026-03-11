@@ -1087,17 +1087,7 @@ function populateManualFields() {
 }
 
 settingsBtn.addEventListener('click', () => {
-  // Clear manual fields so saved values are never exposed until the user
-  // explicitly opens the Manual tab
-  document.getElementById('apiBaseUrl').value = '';
-  document.getElementById('chatHistoryUrl').value = '';
-  document.getElementById('apiPassword').value = '';
-  document.getElementById('apiPassword').type = 'password';
-  document.getElementById('apiBaseUrl').type = 'password';
-  document.getElementById('chatHistoryUrl').type = 'password';
-  document.getElementById('togglePassword').textContent = 'Show';
-  document.getElementById('toggleBaseUrl').textContent = 'Show';
-  document.getElementById('toggleChatUrl').textContent = 'Show';
+  populateManualFields();
   settingsModal.classList.add('active');
 });
 
