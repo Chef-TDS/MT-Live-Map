@@ -1,33 +1,29 @@
-const path = require('path');
 let API_PASSWORD = "aaac9f1b3f62";
 let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
-try {
-  const possibleConfigPaths = [
-    path.join(__dirname, 'server-config.json'),
-    path.join(process.cwd(), 'server-config.json')
-  ];
-  for (const p of possibleConfigPaths) {
-    if (fs.existsSync(p)) {
-      try {
-        const cfg = JSON.parse(fs.readFileSync(p, 'utf8') || '{}');
-        if (cfg.api_password) API_PASSWORD = cfg.api_password;
-        if (cfg.api_base) {
-          API_URL = cfg.api_base.replace(/\/$/, '') + '/player/list';
-          CHAT_API_URL = cfg.api_base.replace(/\/$/, '') + '/chat';
-        }
-        if (cfg.chat_history_url) CHAT_HISTORY_URL = cfg.chat_history_url;
-        console.log('Loaded API config from', p);
-        break;
-      } catch (e) {
-        console.warn('Failed to parse config at', p, e?.message || e);
-      }
+const IS_ELECTRON = navigator.userAgent.includes('Electron');
+// GitHub Pages is HTTPS; the game server is plain HTTP.
+// Route through a CORS proxy automatically when running in a browser.
+// allorigins works with raw IP:port addresses unlike corsproxy.io
+const CORS_PROXY = IS_ELECTRON ? '' : 'https://api.allorigins.win/raw?url=';
+// GitHub Pages is HTTPS; the game server is plain HTTP.
+// Route through a CORS proxy automatically when running in a browser.
+
+// Load saved config immediately so it overrides the defaults above
+(function loadConfigFromStorageEarly() {
+  try {
+    const stored = localStorage.getItem('mtconfig');
+    if (!stored) return;
+    const config = JSON.parse(stored);
+    if (config.api_base) {
+      API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
+      CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
     }
-  }
-} catch (e) {
-  console.warn('Config load error', e?.message || e);
-}
+    if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+    if (config.api_password) API_PASSWORD = config.api_password;
+  } catch(e) {}
+})();
 const MAP = {
   width: 6000,
   height: 8000
@@ -54,44 +50,9 @@ const map = L.map("map", {
   fadeAnimation: false  
 });
 const bounds = [[0, 0], [MAP.height, MAP.width]];
-const fs = require('fs');
-let mapImagePath;
-console.log('__dirname:', __dirname);
-console.log('process.resourcesPath:', process.resourcesPath);
-console.log('process.cwd():', process.cwd());
-const possiblePaths = [
-  __dirname.includes('app.asar') 
-    ? path.join(__dirname.split('app.asar')[0], 'map_new.png')
-    : null,
-  process.resourcesPath 
-    ? path.join(process.resourcesPath, 'map_new.png')
-    : null,
-  path.join(__dirname, '..', 'map_new.png'),
-  path.join(__dirname, '..', '..', 'map_new.png'),
-  path.join(process.cwd(), 'map_new.png'),
-  path.join(__dirname, 'map_new.png'),
-].filter(Boolean); 
-console.log('Trying paths in order:');
-possiblePaths.forEach((p, i) => console.log(`  ${i + 1}. ${p}`));
-for (const testPath of possiblePaths) {
-  console.log('Checking:', testPath);
-  if (fs.existsSync(testPath)) {
-    mapImagePath = testPath;
-    console.log('✓ FOUND MAP at:', mapImagePath);
-    break;
-  } else {
-    console.log('✗ Not found');
-  }
-}
-if (!mapImagePath) {
-  console.error('ERROR: Could not find map_new.png in any location!');
-  console.error('Please ensure map_new.png is in your project root before building.');
-  mapImagePath = path.join(__dirname, 'map_new.png'); 
-}
-console.log('Final map path:', mapImagePath);
-const imageLayer = L.imageOverlay(mapImagePath, bounds, {
+const imageLayer = L.imageOverlay('map_new.png', bounds, {
   opacity: 1,
-  interactive: false,  
+  interactive: false,
   crossOrigin: false
 }).addTo(map);
 map.fitBounds(bounds);
@@ -132,33 +93,8 @@ map.on('mousemove', function(e) {
 map.on('mouseout', function() {
   coordDisplay._div.innerHTML = '<strong>Hover over map</strong>';
 });
-let iconPath;
-console.log('Looking for player icon...');
-const possibleIconPaths = [
-  __dirname.includes('app.asar') 
-    ? path.join(__dirname.split('app.asar')[0], 'assets', 'player-icon.png')
-    : null,
-  process.resourcesPath 
-    ? path.join(process.resourcesPath, 'assets', 'player-icon.png')
-    : null,
-  path.join(__dirname, '..', 'assets', 'player-icon.png'),
-  path.join(__dirname, '..', '..', 'assets', 'player-icon.png'),
-  path.join(process.cwd(), 'assets', 'player-icon.png'),
-  path.join(__dirname, 'assets', 'player-icon.png'),
-].filter(Boolean);
-for (const testPath of possibleIconPaths) {
-  if (fs.existsSync(testPath)) {
-    iconPath = testPath;
-    console.log('✓ FOUND ICON at:', iconPath);
-    break;
-  }
-}
-if (!iconPath) {
-  console.error('ERROR: Could not find player-icon.png!');
-  iconPath = path.join(__dirname, 'assets', 'player-icon.png');
-}
 const defaultIcon = L.icon({
-  iconUrl: iconPath,
+  iconUrl: 'assets/player-icon.png',
   iconSize: [30, 30],
   iconAnchor: [20, 15],
   popupAnchor: [0, -20]
@@ -566,10 +502,10 @@ map.on('dragend', () => { setTimeout(() => { _mapDragged = false; }, 50); });
 
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 const HEATMAP_STORAGE_KEY = 'mt_heatmap_alltime';
-const HEATMAP_CELL        = 50;   // quantise to 50-unit grid cells to merge nearby points
-const HEATMAP_RADIUS      = 35;   // leaflet-heat radius (px)
+const HEATMAP_CELL        = 50;
+const HEATMAP_RADIUS      = 35;
 const HEATMAP_BLUR        = 25;
-const HEATMAP_MAX_ZOOM    = 4;
+let   hmRadius            = HEATMAP_RADIUS;
 
 // Session data: { 'cx,cy': count }
 const hmSessionCells = {};
@@ -581,8 +517,8 @@ try {
   if (raw) hmAllTimeCells = JSON.parse(raw);
 } catch(e) {}
 
-let hmLayer    = null;
-let hmMode     = null; // 'session' | 'alltime' | null
+let hmLayer = null;
+let hmMode  = null; // 'session' | 'alltime' | null
 
 function hmCellKey(x, y) {
   return `${Math.round(x / HEATMAP_CELL)},${Math.round(y / HEATMAP_CELL)}`;
@@ -592,13 +528,13 @@ function recordHeatPoint(x, y) {
   const k = hmCellKey(x, y);
   hmSessionCells[k] = (hmSessionCells[k] || 0) + 1;
   hmAllTimeCells[k] = (hmAllTimeCells[k] || 0) + 1;
-  // Persist all-time every 30 records (avoid hammering localStorage)
   if (hmAllTimeCells[k] % 30 === 0) saveAllTimeHeatmap();
 }
 
 function saveAllTimeHeatmap() {
   try { localStorage.setItem(HEATMAP_STORAGE_KEY, JSON.stringify(hmAllTimeCells)); } catch(e) {}
 }
+
 
 function buildHeatPoints(cells) {
   const pts = [];
@@ -610,7 +546,6 @@ function buildHeatPoints(cells) {
     const wx = cx * HEATMAP_CELL;
     const wy = cy * HEATMAP_CELL;
     const { mapX, mapY } = worldToMap(wx, wy);
-    // intensity: sqrt-scaled so sparse areas still show, then boost radius slightly
     const intensity = Math.sqrt(count / maxCount);
     pts.push([mapY, mapX, intensity]);
   }
@@ -630,14 +565,20 @@ function refreshHeatmap() {
 
   if (pts.length === 0) return;
 
+  const zoom         = map.getZoom();
+  const scaledRadius = Math.max(6, hmRadius * Math.pow(2, zoom - 1));
+  const scaledBlur   = Math.max(4, HEATMAP_BLUR * Math.pow(2, zoom - 1));
+
   hmLayer = L.heatLayer(pts, {
-    radius:  HEATMAP_RADIUS,
-    blur:    HEATMAP_BLUR,
-    maxZoom: HEATMAP_MAX_ZOOM,
+    radius:  scaledRadius,
+    blur:    scaledBlur,
     max:     1.0,
     gradient: { 0.0: '#000033', 0.2: '#0000ff', 0.4: '#00ffff', 0.6: '#ffff00', 0.8: '#ff6600', 1.0: '#ff0000' }
   }).addTo(map);
 }
+
+// Redraw on zoom to prevent canvas drift with CRS.Simple
+map.on('zoomend', () => { if (hmMode) refreshHeatmap(); });
 
 function setHeatmapMode(mode) {
   hmMode = mode;
@@ -648,6 +589,11 @@ function setHeatmapMode(mode) {
 
 document.getElementById('hmSessionBtn').addEventListener('click', () => setHeatmapMode('session'));
 document.getElementById('hmAllTimeBtn').addEventListener('click', () => setHeatmapMode('alltime'));
+document.getElementById('hmRadiusSlider').addEventListener('input', function() {
+  hmRadius = parseInt(this.value);
+  document.getElementById('hmRadiusVal').textContent = hmRadius;
+  if (hmMode) refreshHeatmap();
+});
 document.getElementById('hmOffBtn').addEventListener('click', () => {
   setHeatmapMode(null);
   document.getElementById('hmDataInfo').textContent = 'No data yet';
@@ -680,12 +626,14 @@ document.getElementById('togglePlayerIconsBtn').addEventListener('click', functi
   }
 });
 
+let lastChatStatus = '';
 let pendingUpdate = false;
 async function pollPlayers() {
   if (!isVisible || pendingUpdate) return;
   pendingUpdate = true;
   try {
-    const res = await fetch(`${API_URL}?password=${API_PASSWORD}`);
+    const target = `${API_URL}?password=${API_PASSWORD}`;
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(target)}` : target);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -756,6 +704,19 @@ document.addEventListener('visibilitychange', () => {
     console.log('Window hidden - keeping chat polling active');
   }
 });
+// chat status helper — must be defined before pollIncomingChat is called
+const chatStatusEl = document.getElementById('chatStatus');
+function setChatStatus(text, color = '#fff') {
+  if (chatStatusEl) {
+    chatStatusEl.textContent = text;
+    chatStatusEl.style.color = color;
+  }
+}
+setChatStatus('...');
+
+let lastChatId = 0;
+const recentlySentMsgs = new Set();
+
 pollInterval = setInterval(pollPlayers, 1000);
 pollPlayers();
 let chatPollInterval = setInterval(pollIncomingChat, 2000);
@@ -809,7 +770,7 @@ async function sendChatMessage(message) {
     displayChatMessage(displayName, friendlyDisplay, true, isAnnouncement);
     const typeParam = isAnnouncement ? 'announce' : 'message';
     const url = `${CHAT_API_URL}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`;
-    const res = await fetch(url, { method: 'POST' });
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(url)}` : url, { method: 'POST' });
     if (!res.ok) {
       console.warn(`Chat API response: ${res.status}`);
       displayChatMessage('System', `Failed to send message (HTTP ${res.status})`);
@@ -838,31 +799,14 @@ if (chatInputEl) {
     }
   });
 }
-let lastChatId = 0; 
-const recentlySentMsgs = new Set();
-
-// chat status helper (shows online/offline/error in header)
-const chatStatusEl = document.getElementById('chatStatus');
-function setChatStatus(text, color = '#fff') {
-  if (chatStatusEl) {
-    chatStatusEl.textContent = text;
-    chatStatusEl.style.color = color;
-  }
-}
-
-// initialize to unknown until first poll
-setChatStatus('...');
-
-// track last reported status so we don't spam the chat pane
-let lastChatStatus = '';
-
 function trackSentMessage(text) {
   recentlySentMsgs.add(text);
   setTimeout(() => recentlySentMsgs.delete(text), 10000);
 }
 async function pollIncomingChat() {
   try {
-    const res = await fetch(`${CHAT_HISTORY_URL}?since=${lastChatId}`);
+    const chatTarget = `${CHAT_HISTORY_URL}?since=${lastChatId}`;
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(chatTarget)}` : chatTarget);
     if (!res.ok) {
       if (lastChatStatus !== 'error') {
         displayChatMessage('System', `Chat fetch failed (HTTP ${res.status})`);
@@ -903,8 +847,6 @@ async function pollIncomingChat() {
     console.warn('pollIncomingChat error', err);
   }
 }
-setInterval(pollIncomingChat, 2000);
-pollIncomingChat();
 function initializeColorPalette() {
   const selector = document.getElementById('colorSelector');
   selector.innerHTML = '';
@@ -1130,29 +1072,22 @@ const closeSettingsBtn = document.getElementById('closeSettings');
 
 function populateManualFields() {
   const config = getCurrentConfig();
+  // Set type first, then value — some browsers clear value when type changes
+  document.getElementById('apiBaseUrl').type = 'password';
+  document.getElementById('chatHistoryUrl').type = 'password';
+  document.getElementById('apiPassword').type = 'password';
   document.getElementById('apiBaseUrl').value = config.api_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
-  document.getElementById('apiPassword').type = 'password';
+  const corsProxyEl = document.getElementById('corsProxy');
+  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
-  document.getElementById('apiBaseUrl').type = 'password';
-  document.getElementById('chatHistoryUrl').type = 'password';
 }
 
 settingsBtn.addEventListener('click', () => {
-  // Clear manual fields so saved values are never exposed until the user
-  // explicitly opens the Manual tab
-  document.getElementById('apiBaseUrl').value = '';
-  document.getElementById('chatHistoryUrl').value = '';
-  document.getElementById('apiPassword').value = '';
-  document.getElementById('apiPassword').type = 'password';
-  document.getElementById('apiBaseUrl').type = 'password';
-  document.getElementById('chatHistoryUrl').type = 'password';
-  document.getElementById('togglePassword').textContent = 'Show';
-  document.getElementById('toggleBaseUrl').textContent = 'Show';
-  document.getElementById('toggleChatUrl').textContent = 'Show';
+  populateManualFields();
   settingsModal.classList.add('active');
 });
 
@@ -1174,6 +1109,8 @@ modalTabs.forEach(tab => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tabName + '-tab').classList.add('active');
+    // Populate fields when switching to manual tab
+    if (tabName === 'manual') populateManualFields();
   });
 });
 
@@ -1209,18 +1146,22 @@ setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
+  const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
-    api_password: document.getElementById('apiPassword').value
+    api_password: document.getElementById('apiPassword').value,
+    cors_proxy: (corsEl || {value:''}).value.trim()
   };
-  
+
+
   if (!config.api_base || !config.api_password) {
     alert('API Base URL and Password are required');
     return;
   }
   
   saveConfigToStorage(config);
+  const verify = JSON.parse(localStorage.getItem('mtconfig') || '{}');
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
