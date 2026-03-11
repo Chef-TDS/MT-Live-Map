@@ -17,8 +17,6 @@ const IS_ELECTRON = navigator.userAgent.includes('Electron');
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
-    // Never apply CORS proxy in Electron — it handles CORS natively
-    // (sanitizeCorsProxy not defined yet, raw assign is fine — late load will sanitize)
     if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   } catch(e) {}
 })();
@@ -533,20 +531,6 @@ function saveAllTimeHeatmap() {
   try { localStorage.setItem(HEATMAP_STORAGE_KEY, JSON.stringify(hmAllTimeCells)); } catch(e) {}
 }
 
-function sanitizeCorsProxy(val) {
-  if (!val) return '';
-  // If the user accidentally saved the full constructed URL, strip back to just the proxy base
-  // e.g. "https://corsproxy.io/?url=http%3A%2F%2F..." → "https://corsproxy.io/?url="
-  const match = val.match(/^(https?:\/\/[^?]+\?[^=]+=)/);
-  if (match && val.length > match[1].length) {
-    // Check if the remainder looks like an encoded URL
-    try {
-      const remainder = decodeURIComponent(val.slice(match[1].length));
-      if (remainder.startsWith('http')) return match[1];
-    } catch(e) {}
-  }
-  return val;
-}
 
 function buildHeatPoints(cells) {
   const pts = [];
@@ -1074,7 +1058,7 @@ function loadConfigFromStorage() {
       }
       if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
       if (config.api_password) API_PASSWORD = config.api_password;
-      if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = sanitizeCorsProxy(config.cors_proxy);
+      if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
     } catch (e) {}
   }
 }
@@ -1099,7 +1083,7 @@ function populateManualFields() {
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
   const corsProxyEl = document.getElementById('corsProxy');
-  if (corsProxyEl) corsProxyEl.value = sanitizeCorsProxy(config.cors_proxy || '');
+  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
@@ -1164,17 +1148,15 @@ setupBlurToggle('apiBaseUrl', 'toggleBaseUrl', true);
 setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
-// v2-cors-debug
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
   const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
     api_password: document.getElementById('apiPassword').value,
-    cors_proxy: sanitizeCorsProxy((corsEl || {value:''}).value.trim())
+    cors_proxy: (corsEl || {value:''}).value.trim()
   };
 
-  alert('DEBUG\ncorsProxy element found: ' + !!corsEl + '\nRaw field value: [' + (corsEl ? corsEl.value : 'NO ELEMENT') + ']\nSanitized: [' + config.cors_proxy + ']');
 
   if (!config.api_base || !config.api_password) {
     alert('API Base URL and Password are required');
@@ -1182,11 +1164,12 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
   }
   
   saveConfigToStorage(config);
+  const verify = JSON.parse(localStorage.getItem('mtconfig') || '{}');
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  CORS_PROXY = IS_ELECTRON ? '' : sanitizeCorsProxy(config.cors_proxy || '');
+  CORS_PROXY = IS_ELECTRON ? '' : config.cors_proxy || '';
   
   alert('Configuration saved!');
   settingsModal.classList.remove('active');
@@ -1239,7 +1222,7 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = sanitizeCorsProxy(config.cors_proxy);
+  if (!IS_ELECTRON && config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   
   alert('Configuration applied!');
   settingsModal.classList.remove('active');
