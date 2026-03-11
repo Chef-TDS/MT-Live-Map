@@ -1122,7 +1122,7 @@ const settingsModal = document.getElementById('settingsModal');
 const closeSettingsBtn = document.getElementById('closeSettings');
 
 function populateManualFields() {
-  const isEncryptedSource = (getCurrentConfig().config_source === 'encrypted') && !ALLOW_ALL;
+  const isEncryptedSource = getCurrentConfig().config_source === 'encrypted';
   const config = isEncryptedSource ? { api_base: '', chat_history_url: '', api_password: '' } : getCurrentConfig();
   document.getElementById('apiBaseUrl').type = 'password';
   document.getElementById('chatHistoryUrl').type = 'password';
@@ -1139,6 +1139,9 @@ function populateManualFields() {
 
 settingsBtn.addEventListener('click', () => {
   populateManualFields();
+  // Only allow exporting if config was set manually — prevent privilege escalation
+  const canExport = getCurrentConfig().config_source !== 'encrypted';
+  document.getElementById('exportConfigSection').style.display = canExport ? '' : 'none';
   settingsModal.classList.add('active');
 });
 
@@ -1280,6 +1283,7 @@ document.getElementById('cancelEncryptedBtn').addEventListener('click', () => {
 });
 
 document.getElementById('exportConfigBtn').addEventListener('click', () => {
+  if (getCurrentConfig().config_source === 'encrypted') return; // blocked
   const allowAll = document.getElementById('allowAllCheckbox').checked;
   const base = getCurrentConfig();
   const config = { ...base, config_source: 'encrypted', allow_all: allowAll };
