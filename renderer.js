@@ -531,10 +531,8 @@ function buildHeatPoints(cells) {
 }
 
 function refreshHeatmap() {
-  if (!hmMode) {
-    if (hmLayer) { map.removeLayer(hmLayer); hmLayer = null; }
-    return;
-  }
+  if (hmLayer) { map.removeLayer(hmLayer); hmLayer = null; }
+  if (!hmMode) return;
 
   const cells = hmMode === 'session' ? hmSessionCells : hmAllTimeCells;
   const pts   = buildHeatPoints(cells);
@@ -549,24 +547,12 @@ function refreshHeatmap() {
   const scaledRadius = Math.max(6, hmRadius * Math.pow(2, zoom - 1));
   const scaledBlur   = Math.max(4, HEATMAP_BLUR * Math.pow(2, zoom - 1));
 
-  if (hmLayer) {
-    // Update data in-place — much cheaper than remove+recreate
-    hmLayer.setLatLngs(pts);
-  } else {
-    hmLayer = L.heatLayer(pts, {
-      radius:  scaledRadius,
-      blur:    scaledBlur,
-      max:     1.0,
-      gradient: { 0.0: '#000033', 0.2: '#0000ff', 0.4: '#00ffff', 0.6: '#ffff00', 0.8: '#ff6600', 1.0: '#ff0000' }
-    }).addTo(map);
-  }
-}
-
-function updateHeatmapLive() {
-  if (!hmMode || !hmLayer) return;
-  const cells = hmMode === 'session' ? hmSessionCells : hmAllTimeCells;
-  const pts   = buildHeatPoints(cells);
-  if (pts.length) hmLayer.setLatLngs(pts);
+  hmLayer = L.heatLayer(pts, {
+    radius:  scaledRadius,
+    blur:    scaledBlur,
+    max:     1.0,
+    gradient: { 0.0: '#000033', 0.2: '#0000ff', 0.4: '#00ffff', 0.6: '#ffff00', 0.8: '#ff6600', 1.0: '#ff0000' }
+  }).addTo(map);
 }
 
 // Redraw on zoom to prevent canvas drift with CRS.Simple
@@ -678,9 +664,6 @@ async function pollPlayers() {
       renderTrackerPanel();
       drawTrackerPolyline();
     }
-
-    // Push new heatmap samples to the live layer
-    updateHeatmapLive();
 
     pendingUpdate = false;
   } catch (err) {
