@@ -1221,6 +1221,7 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+  if (config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
   
   alert('Configuration applied!');
   settingsModal.classList.remove('active');
