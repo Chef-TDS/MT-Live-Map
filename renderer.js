@@ -2,6 +2,9 @@ let API_PASSWORD = "aaac9f1b3f62";
 let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
+// true = full access; false = players-on-map only (no chat, no location history)
+// Manual config always grants full access. Encrypted config requires allow_all flag.
+let ALLOW_ALL = true;
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
 
 // Cloudflare Worker proxy — routes HTTP game server requests through HTTPS
@@ -24,6 +27,9 @@ async function fetchWithProxy(url, options = {}) {
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
+    // Manual config always full access; encrypted config respects allow_all flag
+    if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
+    else ALLOW_ALL = true;
   } catch(e) {}
 })();
 const MAP = {
@@ -408,6 +414,7 @@ function formatAge(ts) {
 }
 
 function openTracker(id, name) {
+  if (!ALLOW_ALL) return; // location history restricted
   trackedPlayerId = id;
   document.getElementById('locTrackerName').textContent = `📍 ${name}`;
   document.getElementById('locTrackerPanel').classList.add('open');
@@ -652,7 +659,7 @@ async function pollPlayers() {
       const { mapX, mapY } = worldToMap(loc.x, loc.y);
 
       // Record location history for all players
-      recordLocation(p.unique_id, loc.x, loc.y, loc.z || 0);
+      if (ALLOW_ALL) recordLocation(p.unique_id, loc.x, loc.y, loc.z || 0);
       // Record heatmap data
       recordHeatPoint(loc.x, loc.y);
 
@@ -721,8 +728,8 @@ const recentlySentMsgs = new Set();
 
 pollInterval = setInterval(pollPlayers, 1000);
 pollPlayers();
-let chatPollInterval = setInterval(pollIncomingChat, 2000);
-pollIncomingChat();
+let chatPollInterval = ALLOW_ALL ? setInterval(pollIncomingChat, 2000) : null;
+if (ALLOW_ALL) pollIncomingChat();
 function displayChatMessage(name, message, isOwn = false, isAnnouncement = false) {
   const container = document.getElementById('chatMessages');
   const messageEl = document.createElement('div');
@@ -911,6 +918,48 @@ function setupColorControls() {
 }
 initializeColorPalette();
 setupColorControls();
+
+// ── Color Export / Import ─────────────────────────────────────────────────────
+document.getElementById('exportColorsBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('exportColorsBtn');
+  const text = chatColors.join(',');
+  try {
+    await navigator.clipboard.writeText(text);
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = '📤'; }, 1500);
+  } catch(e) {
+    prompt('Copy your colors:', text);
+  }
+});
+
+document.getElementById('importColorsBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('importColorsBtn');
+  let text;
+  try {
+    text = await navigator.clipboard.readText();
+  } catch(e) {
+    text = prompt('Paste colors (comma-separated hex, e.g. FF0000,00FF00):');
+  }
+  if (!text) return;
+  const imported = text.split(',')
+    .map(c => c.trim().replace(/^#/, '').toUpperCase())
+    .filter(c => /^[0-9A-F]{6}$/.test(c));
+  if (imported.length === 0) {
+    btn.textContent = '✗';
+    btn.style.background = '#c0392b';
+    setTimeout(() => { btn.textContent = '📥'; btn.style.background = ''; }, 1500);
+    return;
+  }
+  // Merge: add any colors not already in the palette
+  let added = 0;
+  imported.forEach(c => {
+    if (!chatColors.includes(c)) { chatColors.push(c); added++; }
+  });
+  localStorage.setItem('chatColors', JSON.stringify(chatColors));
+  initializeColorPalette();
+  btn.textContent = `+${added}`;
+  setTimeout(() => { btn.textContent = '📥'; }, 1500);
+});
 function setupUsernameControls() {
   const input = document.getElementById('usernameField');
   const clearBtn = document.getElementById('clearUsernameBtn');
@@ -1073,8 +1122,8 @@ const settingsModal = document.getElementById('settingsModal');
 const closeSettingsBtn = document.getElementById('closeSettings');
 
 function populateManualFields() {
-  const config = getCurrentConfig();
-  // Set type first, then value — some browsers clear value when type changes
+  const isEncryptedSource = (getCurrentConfig().config_source === 'encrypted') && !ALLOW_ALL;
+  const config = isEncryptedSource ? { api_base: '', chat_history_url: '', api_password: '' } : getCurrentConfig();
   document.getElementById('apiBaseUrl').type = 'password';
   document.getElementById('chatHistoryUrl').type = 'password';
   document.getElementById('apiPassword').type = 'password';
@@ -1148,12 +1197,12 @@ setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
-  const corsEl = document.getElementById('corsProxy');
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
     api_password: document.getElementById('apiPassword').value,
-    cors_proxy: (corsEl || {value:''}).value.trim()
+    config_source: 'manual',
+    allow_all: true
   };
 
 
@@ -1214,11 +1263,12 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
     return;
   }
   
-  saveConfigToStorage(config);
+  saveConfigToStorage({ ...config, config_source: 'encrypted' });
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+  ALLOW_ALL = !!config.allow_all;
   
   alert('Configuration applied!');
   settingsModal.classList.remove('active');
@@ -1230,12 +1280,14 @@ document.getElementById('cancelEncryptedBtn').addEventListener('click', () => {
 });
 
 document.getElementById('exportConfigBtn').addEventListener('click', () => {
-  const config = getCurrentConfig();
+  const allowAll = document.getElementById('allowAllCheckbox').checked;
+  const base = getCurrentConfig();
+  const config = { ...base, config_source: 'encrypted', allow_all: allowAll };
   const encrypted = encryptConfig(config);
   const display = document.getElementById('exportedConfig');
   display.textContent = encrypted;
   display.style.display = 'block';
-  
+
   const copyBtn = document.getElementById('exportConfigBtn');
   copyBtn.textContent = 'Copy Encrypted Config';
   copyBtn.onclick = (e) => {
@@ -2236,7 +2288,7 @@ document.getElementById('sidebarPlayersBtn').addEventListener('click', () => {
   closeAllPanels();
   if (!isOpen) {
     document.getElementById('playerListSidebar').classList.add('open');
-    document.getElementById('chatSidebar').classList.add('open');
+    if (ALLOW_ALL) document.getElementById('chatSidebar').classList.add('open');
     document.getElementById('sidebarPlayersBtn').classList.add('active');
     document.body.classList.add('players-panel-open');
   }
