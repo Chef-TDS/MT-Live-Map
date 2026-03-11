@@ -1076,7 +1076,8 @@ function populateManualFields() {
   document.getElementById('apiBaseUrl').value = config.api_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
-  document.getElementById('corsProxy').value = config.cors_proxy || '';
+  const corsProxyEl = document.getElementById('corsProxy');
+  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
   document.getElementById('apiPassword').type = 'password';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
@@ -1159,7 +1160,7 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
     api_password: document.getElementById('apiPassword').value,
-    cors_proxy: document.getElementById('corsProxy').value.trim()
+    cors_proxy: (document.getElementById('corsProxy') || {value:''}).value.trim()
   };
   
   if (!config.api_base || !config.api_password) {
