@@ -1,0 +1,1936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Motor Town Live Map</title>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet/dist/leaflet.css"
+  />
+
+  <style>
+    
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+
+    body {
+      display: block;
+    }
+
+    
+    #map {
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #000;
+      transform: translateZ(0); 
+      will-change: transform; 
+    }
+
+    
+    .leaflet-container {
+      background: #000;
+      user-select: none;
+      transform: translateZ(0); 
+    }
+
+    .leaflet-control-zoom {
+      display: none !important;
+    }
+
+    /* Shown while a checkpoint rotation drag is active */
+    .rotation-hint {
+      position: fixed;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.75);
+      color: #ff9500;
+      font-size: 12px;
+      padding: 5px 14px;
+      border-radius: 4px;
+      pointer-events: none;
+      z-index: 9999;
+      display: none;
+    }
+
+    
+    .leaflet-image-layer {
+      outline: 2px solid #444;
+      transform: translateZ(0); 
+      image-rendering: -webkit-optimize-contrast; 
+      image-rendering: crisp-edges;
+    }
+
+    
+    .leaflet-pane img {
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      transform: translateZ(0); 
+    }
+    
+    
+    .leaflet-marker-icon {
+      transform: translateZ(0); 
+      will-change: transform;
+    }
+    
+    
+    .leaflet-popup {
+      transform: translateZ(0);
+    }
+
+    .checkpoint-label .leaflet-tooltip-content {
+      background: transparent !important;
+      padding: 0 !important;
+      color: white;
+      margin: 0 !important;
+    }
+
+    .checkpoint-label.leaflet-tooltip {
+      background: transparent !important;
+      border: none !important;
+      box-shadow: none !important;
+      padding: 0 !important;
+    }
+
+    
+    .player-list-sidebar {
+      position: fixed;
+      left: 54px;
+      top: 0;
+      bottom: 0;
+      width: 250px;
+      background: #1a1a1a;
+      border-right: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 100;
+    }
+
+    .player-list-sidebar.open { display: flex; }
+
+    .player-list-header {
+      background: #0d0d0d;
+      padding: 15px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .player-count {
+      background: #00b1e0;
+      color: #000;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .player-list-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+    }
+
+    .player-item {
+      padding: 8px 12px;
+      margin-bottom: 5px;
+      background: #2a2a2a;
+      border-radius: 4px;
+      border-left: 3px solid #00b1e0;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .player-item:hover {
+      background: #353535;
+    }
+
+    .player-item .player-name {
+      font-weight: bold;
+      color: #00b1e0;
+    }
+
+    .player-item .player-id {
+      font-size: 10px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    /* ── Location Tracker Panel ─────────────────────────────────── */
+    .loc-tracker-panel {
+      position: fixed;
+      left: 304px; /* 54px sidebar + 250px player list */
+      top: 0;
+      bottom: 0;
+      width: 260px;
+      background: #1a1a1a;
+      border-right: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 99;
+    }
+    .loc-tracker-panel.open { display: flex; }
+
+    .loc-tracker-header {
+      background: #0d0d0d;
+      padding: 12px 15px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .loc-tracker-name {
+      color: #00b1e0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .loc-tracker-close {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 16px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 2px;
+      flex-shrink: 0;
+    }
+    .loc-tracker-close:hover { color: #fff; }
+
+    .loc-tracker-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .loc-tracker-empty {
+      text-align: center;
+      color: #555;
+      font-size: 12px;
+      margin-top: 30px;
+    }
+    .loc-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 8px;
+      margin-bottom: 4px;
+      background: #242424;
+      border-radius: 4px;
+      border-left: 3px solid #1a5f7a;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-size: 11px;
+    }
+    .loc-entry:first-child { border-left-color: #00b1e0; }
+    .loc-entry:hover { background: #2e2e2e; }
+    .loc-entry-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #1a5f7a;
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+    .loc-entry:first-child .loc-entry-dot { background: #00b1e0; }
+    .loc-entry-info { flex: 1; min-width: 0; }
+    .loc-entry-coords {
+      color: #ccc;
+      font-family: monospace;
+      font-size: 10px;
+    }
+    .loc-entry-time {
+      color: #555;
+      font-size: 10px;
+      margin-top: 2px;
+    }
+    .loc-tracker-footer {
+      padding: 8px;
+      border-top: 1px solid #2a2a2a;
+      font-size: 10px;
+      color: #555;
+      text-align: center;
+    }
+    .player-item.tracked { border-left-color: #ffaa00; }
+    .player-item.tracked .player-name { color: #ffaa00; }
+
+    /* ── Heatmap Panel ──────────────────────────────────────────── */
+    .heatmap-panel {
+      position: fixed;
+      left: 54px;
+      top: 0;
+      bottom: 0;
+      width: 220px;
+      background: #1a1a1a;
+      border-right: 2px solid #ff6600;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 100;
+    }
+    .heatmap-panel.open { display: flex; }
+    .heatmap-header {
+      background: #0d0d0d;
+      padding: 13px 15px;
+      border-bottom: 2px solid #ff6600;
+      font-weight: bold;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .heatmap-header span { color: #ff6600; }
+    .heatmap-body { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .heatmap-mode-btn {
+      width: 100%;
+      padding: 10px 12px;
+      background: #242424;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #ccc;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .heatmap-mode-btn:hover { border-color: #ff6600; color: #ff6600; background: #2a2a2a; }
+    .heatmap-mode-btn.active { border-color: #ff6600; background: #2a1800; color: #ff9944; font-weight: bold; }
+    .heatmap-mode-btn .hm-btn-title { font-size: 12px; font-weight: bold; margin-bottom: 3px; }
+    .heatmap-mode-btn .hm-btn-sub { font-size: 10px; color: #666; }
+    .heatmap-mode-btn.active .hm-btn-sub { color: #aa6622; }
+    .heatmap-off-btn {
+      width: 100%;
+      padding: 8px 12px;
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #666;
+      font-size: 11px;
+      cursor: pointer;
+      margin-top: auto;
+      transition: all 0.15s;
+    }
+    .heatmap-off-btn:hover { border-color: #888; color: #ccc; }
+    .hm-radius-row {
+      padding: 6px 0 8px;
+      border-top: 1px solid #222;
+    }
+    .hm-radius-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #888;
+      margin-bottom: 5px;
+    }
+    .hm-radius-label span:last-child { color: #ff6600; font-weight: bold; }
+    .heatmap-data-info {
+      font-size: 10px;
+      color: #555;
+      text-align: center;
+      padding: 6px 0;
+      border-top: 1px solid #222;
+      margin-top: auto;
+    }
+    .heatmap-legend {
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      padding: 10px;
+      background: #111;
+    }
+    .hm-legend-title {
+      font-size: 10px;
+      font-weight: bold;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 7px;
+    }
+    .hm-legend-bar {
+      height: 10px;
+      border-radius: 4px;
+      background: linear-gradient(to right, #000033, #0000ff, #00ffff, #ffff00, #ff6600, #ff0000);
+      margin-bottom: 3px;
+    }
+    .hm-legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: #555;
+      margin-bottom: 10px;
+    }
+    .hm-legend-rows { display: flex; flex-direction: column; gap: 5px; }
+    .hm-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 10px;
+      color: #999;
+    }
+    .hm-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .hm-legend-title {
+      font-size: 10px;
+      font-weight: bold;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 7px;
+    }
+    .hm-legend-bar {
+      height: 10px;
+      border-radius: 4px;
+      background: linear-gradient(to right, #000033, #0000ff, #00ffff, #ffff00, #ff6600, #ff0000);
+      margin-bottom: 3px;
+    }
+    .hm-legend-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 9px;
+      color: #555;
+      margin-bottom: 10px;
+    }
+    .hm-legend-rows { display: flex; flex-direction: column; gap: 5px; }
+    .hm-legend-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 10px;
+      color: #999;
+    }
+    .hm-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    
+    .chat-sidebar {
+      position: fixed;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 300px;
+      background: #1a1a1a;
+      border-left: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 100;
+    }
+
+    .chat-sidebar.open { display: flex; }
+
+    .chat-header {
+      background: #0d0d0d;
+      padding: 15px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 14px;
+      position: relative;
+    }
+
+    .chat-status {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 11px;
+      color: #0f0;
+    }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .chat-message {
+      font-size: 12px;
+      line-height: 1.4;
+      padding: 8px;
+      background: #2a2a2a;
+      border-radius: 4px;
+      border-left: 3px solid #00b1e0;
+    }
+
+    .chat-message .player-name {
+      color: #00b1e0;
+      font-weight: bold;
+      margin-right: 5px;
+    }
+
+    .chat-message .message-time {
+      color: #888;
+      font-size: 10px;
+      margin-left: 5px;
+    }
+
+    .chat-input-area {
+      border-top: 2px solid #00b1e0;
+      padding: 10px;
+      display: flex;
+      gap: 5px;
+      background: #0d0d0d;
+    }
+
+    .chat-input-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 3px;
+      padding: 0 4px;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .chat-input-wrapper:focus-within {
+      border-color: #00b1e0;
+    }
+
+    .map-link-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #00b1e0;
+      color: #000;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .pill-remove {
+      cursor: pointer;
+      font-size: 10px;
+      opacity: 0.7;
+      line-height: 1;
+    }
+
+    .pill-remove:hover {
+      opacity: 1;
+    }
+
+    #chatInput {
+      flex: 1;
+      padding: 8px 4px;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 12px;
+      min-width: 0;
+    }
+
+    #chatInput:focus {
+      outline: none;
+    }
+
+    #sendBtn {
+      padding: 8px 12px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    #sendBtn:hover {
+      background: #ff9500;
+    }
+
+    #sendBtn:active {
+      transform: scale(0.98);
+    }
+
+    
+    .color-selector-area {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 10px;
+      padding: 8px;
+      background: #0d0d0d;
+      border-radius: 3px;
+    }
+
+    .color-quick-pick {
+      width: 24px;
+      height: 24px;
+      border-radius: 3px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: border 0.2s;
+    }
+
+    .color-quick-pick.selected {
+      border-color: #fff;
+    }
+
+    .color-quick-pick {
+      position: relative;
+    }
+
+    .remove-color-btn {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      width: 16px;
+      height: 16px;
+      background: #c00;
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 10px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .color-quick-pick:hover .remove-color-btn {
+      display: flex;
+    }
+
+    .remove-color-btn:hover {
+      background: #ff0000;
+    }
+
+    
+    .color-add-area {
+      display: flex;
+      gap: 5px;
+      padding: 8px;
+      background: #0d0d0d;
+      border-bottom: 1px solid #333;
+    }
+
+    .username-area {
+      display: flex;
+      gap: 5px;
+      padding: 8px;
+      background: #0d0d0d;
+      border-bottom: 1px solid #333;
+      align-items: center;
+    }
+
+    .username-area input {
+      flex: 1;
+      padding: 6px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    .announce-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #ccc;
+      font-size: 11px;
+      margin-left: 6px;
+    }
+
+    .announce-label input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .username-area button {
+      padding: 6px 10px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .username-area button:hover {
+      background: #555;
+    }
+
+    
+    .chat-message.announcement {
+      background: #3a3a3a;
+      border-left-color: #ff0000;
+    }
+
+    #hexColorInput {
+      flex: 1;
+      padding: 6px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 3px;
+      font-size: 11px;
+    }
+
+    #hexColorInput:focus {
+      outline: none;
+      border-color: #00b1e0;
+    }
+
+    #addColorBtn {
+      padding: 6px 10px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 11px;
+    }
+
+    #addColorBtn:hover {
+      background: #ff9500;
+    }
+
+    
+    /* Coord display — always clear of icon sidebar; shifts right when a left panel is open */
+    .leaflet-bottom.leaflet-left {
+      left: 62px !important;
+      transition: left 0.15s;
+    }
+    body.players-panel-open .leaflet-bottom.leaflet-left {
+      left: 314px !important; /* 54 + 252 + 8 */
+    }
+    body.races-panel-open .leaflet-bottom.leaflet-left {
+      left: 334px !important; /* 54 + 272 + 8 */
+    }
+
+    .checkpoint-div-icon {
+      background: none !important;
+      border: none !important;
+    }
+    .coord-display {
+      background: rgba(0, 0, 0, 0.8);
+      padding: 10px 15px;
+      border-radius: 5px;
+      border: 2px solid #00b1e0;
+      color: #fff;
+      font-family: monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .coord-display strong {
+      color: #00b1e0;
+    }
+
+    
+    .player-search-area {
+      padding: 10px;
+      background: #0d0d0d;
+      border-bottom: 2px solid #00b1e0;
+    }
+
+    #playerSearch {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 3px;
+      font-size: 12px;
+    }
+
+    #playerSearch:focus {
+      outline: none;
+      border-color: #00b1e0;
+    }
+
+    #playerSearch::placeholder {
+      color: #888;
+    }
+
+    /* ── Old floating buttons — hidden, still referenced by JS ── */
+    #settingsBtn { display: none !important; }
+
+    /* ── Left Icon Sidebar ─────────────────────────────────────── */
+    #left-icon-sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 54px;
+      background: #0d0d0d;
+      border-right: 2px solid #00b1e0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 10px 0;
+      gap: 6px;
+      z-index: 200;
+      user-select: none;
+    }
+
+    .sidebar-icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 7px;
+      background: #1a1a1a;
+      border: 1px solid #333;
+      color: #999;
+      cursor: pointer;
+      font-size: 17px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+      flex-shrink: 0;
+      position: relative;
+      outline: none;
+    }
+
+    .sidebar-icon-btn:hover {
+      background: #252525;
+      border-color: #00b1e0;
+      color: #00b1e0;
+    }
+
+    .sidebar-icon-btn.active {
+      background: #00b1e0;
+      border-color: #00b1e0;
+      color: #000;
+    }
+
+    .sidebar-icon-btn .sidebar-tooltip {
+      position: absolute;
+      left: 46px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: #1a1a1a;
+      border: 1px solid #00b1e0;
+      color: #fff;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      z-index: 2000;
+    }
+
+    .sidebar-icon-btn:hover .sidebar-tooltip {
+      opacity: 1;
+    }
+
+    .sidebar-spacer { display: none; }
+
+    .sidebar-divider {
+      width: 30px;
+      height: 1px;
+      background: #333;
+      margin: 2px 0;
+    }
+
+    /* ── Checkpoint Manager Panel ──────────────────────────────── */
+    #checkpoint-manager {
+      position: fixed;
+      left: 54px;
+      top: 0;
+      bottom: 0;
+      width: 270px;
+      background: #1a1a1a;
+      border-right: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      overflow: hidden; /* the body child scrolls, not this container */
+      z-index: 100;
+      min-height: 0;
+    }
+
+    #checkpoint-manager.open { display: flex; }
+
+    .cp-manager-header {
+      background: #0d0d0d;
+      padding: 13px 14px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .cp-manager-header span.cp-title { color: #00b1e0; }
+
+    .cp-count-badge {
+      background: #00b1e0;
+      color: #000;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    .cp-manager-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      /* Ensure scrollbar appears, content never squishes */
+      min-height: 0;
+    }
+
+    .cp-item {
+      background: #222;
+      border-radius: 5px;
+      border-left: 3px solid #00b1e0;
+      overflow: hidden;
+      transition: border-color 0.15s;
+      flex-shrink: 0; /* never let items compress */
+    }
+
+    .cp-item.editing { border-left-color: #ff9500; }
+
+    .cp-item-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+
+    .cp-item-header:hover { background: #2a2a2a; }
+
+    .cp-item-num {
+      background: #00b1e0;
+      color: #000;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 6px;
+      flex-shrink: 0;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    .cp-item.editing .cp-item-num { background: #ff9500; }
+
+    .cp-item-coords {
+      flex: 1;
+      font-size: 10px;
+      color: #777;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .cp-item-arrow {
+      font-size: 9px;
+      color: #555;
+      transition: transform 0.15s;
+      flex-shrink: 0;
+    }
+
+    .cp-item-arrow.open { transform: rotate(90deg); }
+
+    .cp-item-editor {
+      display: none;
+      flex-direction: column;
+      gap: 0;
+      padding: 0 10px 10px 10px;
+      border-top: 1px solid #333;
+    }
+
+    .cp-item-editor.open { display: flex; }
+
+    .cp-editor-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 7px;
+    }
+
+    .cp-editor-label {
+      font-size: 10px;
+      color: #888;
+      width: 14px;
+      text-align: right;
+      flex-shrink: 0;
+      font-weight: bold;
+    }
+
+    .cp-editor-input {
+      flex: 1;
+      padding: 5px 7px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: monospace;
+    }
+
+    /* Hide native spin buttons entirely */
+    .cp-editor-input[type=number]::-webkit-inner-spin-button,
+    .cp-editor-input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      appearance: none;
+      margin: 0;
+    }
+    .cp-editor-input[type=number] { -moz-appearance: textfield; }
+
+    /* Custom stepper arrows */
+    .cp-stepper {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      flex-shrink: 0;
+    }
+    .cp-stepper-btn {
+      background: none;
+      border: none;
+      color: #00b1e0;
+      font-size: 9px;
+      line-height: 1;
+      padding: 1px 3px;
+      cursor: pointer;
+      opacity: 0.8;
+      user-select: none;
+    }
+    .cp-stepper-btn:hover { opacity: 1; color: #33d4ff; }
+
+    .cp-editor-input:focus {
+      outline: none;
+      border-color: #00b1e0;
+    }
+
+    .cp-editor-section {
+      font-size: 9px;
+      font-weight: bold;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-top: 10px;
+      margin-bottom: 2px;
+    }
+
+    .cp-yaw-slider {
+      width: calc(100% - 16px);
+      margin: 4px 8px 8px 8px;
+      accent-color: #00b1e0;
+      display: block;
+    }
+
+    .cp-size-slider {
+      accent-color: #00b1e0;
+    }
+
+    .cp-btn-row {
+      display: flex;
+      gap: 6px;
+      padding: 0 8px 8px 8px;
+    }
+
+    .cp-revert-btn {
+      flex: 0 0 auto;
+      padding: 6px 10px;
+      background: #2a2a2a;
+      color: #ff9500;
+      border: 1px solid #ff9500;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+    }
+    .cp-revert-btn:hover { background: #3a2800; }
+
+    .cp-apply-btn {
+      flex: 1;
+      margin-top: 0;
+      padding: 6px 0;
+      width: auto;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+      transition: background 0.15s;
+    }
+
+    .cp-apply-btn:hover { background: #00d4ff; }
+    .cp-apply-btn.success { background: #1a7a1a !important; color: #0f0 !important; }
+    .cp-apply-btn.error { background: #7a1a1a !important; color: #f55 !important; }
+
+    .cp-no-race {
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+      padding: 20px 10px;
+    }
+
+    /* ── Race Menu Button — hidden, triggered via sidebar ── */
+    #raceMenuBtn { display: none !important; }
+
+    /* ── Races Sidebar Panel — RIGHT side (where chat was) ──────── */
+    #raceMenuPanel {
+      position: fixed;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 280px;
+      background: #1a1a1a;
+      border-left: 2px solid #00b1e0;
+      z-index: 100;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #raceMenuPanel.open { display: flex; }
+
+    .race-sidebar-header {
+      background: #0d0d0d;
+      padding: 13px 14px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 13px;
+      color: #00b1e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .race-sidebar-loaded-tag {
+      font-size: 10px;
+      color: #ff9500;
+      font-weight: normal;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      max-width: 130px;
+    }
+
+    .race-sidebar-body {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Make saved races list fill available space in the sidebar */
+    #raceMenuPanel .saved-races-list {
+      max-height: none;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      z-index: 2000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: #1a1a1a;
+      border: 2px solid #00b1e0;
+      border-radius: 8px;
+      padding: 30px;
+      width: 90%;
+      max-width: 500px;
+      max-height: 80vh;
+      overflow-y: auto;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 25px;
+      border-bottom: 2px solid #00b1e0;
+      padding-bottom: 15px;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      color: #00b1e0;
+      font-size: 20px;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: #00b1e0;
+      font-size: 28px;
+      cursor: pointer;
+      padding: 0;
+      width: 30px;
+      height: 30px;
+    }
+
+    .modal-close:hover {
+      color: #00d4ff;
+    }
+
+    .settings-section {
+      margin-bottom: 25px;
+    }
+
+    .settings-section label {
+      display: block;
+      margin-bottom: 8px;
+      color: #00b1e0;
+      font-weight: bold;
+      font-size: 12px;
+    }
+
+    .settings-section input,
+    .settings-section textarea {
+      width: 100%;
+      padding: 10px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+
+    .settings-section input:focus,
+    .settings-section textarea:focus {
+      outline: none;
+      border-color: #00b1e0;
+    }
+
+    .blurred-input {
+      letter-spacing: 0.3em;
+      font-size: 16px;
+    }
+
+    .toggle-blur {
+      display: inline-block;
+      margin-left: 10px;
+      padding: 4px 8px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+      font-size: 11px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .toggle-blur:hover {
+      background: #00d4ff;
+    }
+
+    .modal-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 25px;
+    }
+
+    .modal-btn {
+      padding: 12px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 12px;
+      transition: all 0.2s;
+    }
+
+    .modal-btn-primary {
+      background: #00b1e0;
+      color: #000;
+    }
+
+    .modal-btn-primary:hover {
+      background: #00d4ff;
+    }
+
+    .modal-btn-secondary {
+      background: #444;
+      color: #fff;
+    }
+
+    .modal-btn-secondary:hover {
+      background: #555;
+    }
+
+    .modal-btn-danger {
+      background: #d32f2f;
+      color: #fff;
+    }
+
+    .modal-btn-danger:hover {
+      background: #f44336;
+    }
+
+    .modal-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #444;
+    }
+
+    .modal-tab {
+      padding: 10px 15px;
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-weight: bold;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .modal-tab.active {
+      color: #00b1e0;
+      border-bottom-color: #00b1e0;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .config-display {
+      background: #0d0d0d;
+      padding: 12px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      font-family: monospace;
+      font-size: 11px;
+      word-break: break-all;
+      max-height: 150px;
+      overflow-y: auto;
+      margin-bottom: 10px;
+    }
+
+    .copy-btn {
+      width: 100%;
+      padding: 8px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 11px;
+    }
+
+    .copy-btn:hover {
+      background: #00d4ff;
+    }
+
+    .info-text {
+      color: #888;
+      font-size: 11px;
+      margin-top: 10px;
+      line-height: 1.5;
+    }
+
+    /* Race panel styles continue below... */
+
+    .race-menu-section {
+      padding: 12px 14px;
+      border-bottom: 1px solid #2e2e2e;
+    }
+
+    .race-menu-section:last-child {
+      border-bottom: none;
+    }
+
+    .race-menu-section-title {
+      font-size: 10px;
+      font-weight: bold;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+
+    .race-save-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .race-save-row input {
+      flex: 1;
+      padding: 7px 9px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      color: #fff;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+
+    .race-save-row input:focus {
+      outline: none;
+      border-color: #00b1e0;
+    }
+
+    .race-menu-btn {
+      padding: 7px 12px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+
+    .race-menu-btn:hover {
+      background: #00d4ff;
+    }
+
+    .race-menu-btn.danger {
+      background: #333;
+      color: #ff6b6b;
+      border: 1px solid #ff6b6b;
+    }
+
+    .race-menu-btn.danger:hover {
+      background: #ff6b6b;
+      color: #000;
+    }
+
+    .race-menu-btn.full-width {
+      width: 100%;
+    }
+
+    .saved-races-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .saved-race-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #2a2a2a;
+      border-radius: 4px;
+      padding: 6px 8px;
+      border-left: 3px solid #00b1e0;
+    }
+
+    .saved-race-name {
+      flex: 1;
+      font-size: 12px;
+      color: #fff;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .race-item-load {
+      padding: 4px 9px;
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: bold;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+
+    .race-item-load:hover {
+      background: #00d4ff;
+    }
+
+    .race-item-load.loaded {
+      background: #c0392b;
+      color: #fff;
+    }
+
+    .race-item-load.loaded:hover {
+      background: #e74c3c;
+    }
+
+    .race-item-delete {
+      padding: 4px 7px;
+      background: transparent;
+      color: #888;
+      border: 1px solid #444;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 11px;
+      flex-shrink: 0;
+      transition: all 0.15s;
+    }
+
+    .race-item-delete:hover {
+      background: #d32f2f;
+      color: #fff;
+      border-color: #d32f2f;
+    }
+
+    .race-menu-btn.success { background: #1a7a1a !important; color: #0f0 !important; }
+    .race-menu-btn.fail    { background: #7a1a1a !important; color: #f55 !important; }
+
+    .no-races-msg {
+      font-size: 11px;
+      color: #666;
+      text-align: center;
+      padding: 8px 0;
+    }
+
+    /* Folder system */
+    .race-folder-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #222;
+      border-radius: 4px;
+      padding: 6px 8px;
+      cursor: pointer;
+      border-left: 3px solid #ff9500;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .race-folder-header:hover { background: #2c2c2c; }
+    .race-folder-header.drag-over { background: #1a3020; border-left-color: #0f0; outline: 1px dashed #0f0; }
+
+    .race-folder-arrow { font-size: 9px; color: #888; transition: transform 0.15s; flex-shrink: 0; }
+    .race-folder-arrow.open { transform: rotate(90deg); }
+
+    .race-folder-name { flex: 1; font-size: 12px; color: #ff9500; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .race-folder-delete { padding: 3px 6px; background: transparent; color: #666; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 10px; flex-shrink: 0; transition: all 0.15s; }
+    .race-folder-delete:hover { background: #d32f2f; color: #fff; border-color: #d32f2f; }
+
+    .race-folder-contents { display: none; flex-direction: column; gap: 4px; padding-left: 14px; padding-top: 4px; }
+    .race-folder-contents.open { display: flex; }
+
+    .saved-race-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      background: #2a2a2a;
+      border-radius: 4px;
+      padding: 6px 8px;
+      border-left: 3px solid #00b1e0;
+    }
+    .saved-race-item.in-folder { border-left-color: #777; background: #232323; }
+    .saved-race-item.dragging { opacity: 0.35; }
+
+    .drag-handle { color: #555; font-size: 11px; cursor: grab; flex-shrink: 0; }
+    .drag-handle:hover { color: #888; }
+
+    .saved-race-name { flex: 1; font-size: 12px; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .race-item-load { padding: 4px 9px; background: #00b1e0; color: #000; border: none; border-radius: 3px; cursor: pointer; font-size: 11px; font-weight: bold; flex-shrink: 0; transition: background 0.15s; }
+    .race-item-load:hover { background: #00d4ff; }
+
+    .race-item-eject { padding: 4px 6px; background: transparent; color: #777; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px; flex-shrink: 0; transition: all 0.15s; }
+    .race-item-eject:hover { background: #444; color: #fff; }
+
+    .race-item-delete { padding: 4px 7px; background: transparent; color: #888; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px; flex-shrink: 0; transition: all 0.15s; }
+    .race-item-delete:hover { background: #d32f2f; color: #fff; border-color: #d32f2f; }
+
+    .race-menu-section-title-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .race-menu-section-title-row .race-menu-section-title { margin-bottom: 0; }
+
+    .race-new-folder-btn { font-size: 10px; padding: 3px 8px; background: #2a2a2a; color: #888; border: 1px solid #444; border-radius: 3px; cursor: pointer; transition: all 0.15s; }
+    .race-new-folder-btn:hover { background: #383838; color: #fff; border-color: #666; }
+
+    /* ── Drag-and-drop drop zones ─────────────────────────────── */
+    .race-dz {
+      height: 4px;
+      border-radius: 2px;
+      margin: 0 4px;
+      transition: height 0.1s, background 0.1s;
+    }
+    .race-dz.dz-active {
+      height: 6px;
+      background: rgba(0, 177, 224, 0.15);
+    }
+    .race-dz.dz-over {
+      height: 8px !important;
+      background: #00b1e0 !important;
+    }
+
+    .race-folder-header.dz-over {
+      background: #1a3a20 !important;
+      border-left-color: #00ff88 !important;
+      outline: 1px dashed #00ff88;
+    }
+
+    .saved-races-list { display: flex; flex-direction: column; gap: 0; max-height: none; overflow-y: auto; }
+
+    .race-folder-wrapper { display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+
+  <!-- Left Icon Sidebar -->
+  <div id="left-icon-sidebar">
+    <button class="sidebar-icon-btn" id="sidebarSettingsBtn">
+      ⚙️
+      <span class="sidebar-tooltip">Settings</span>
+    </button>
+    <button class="sidebar-icon-btn" id="sidebarPlayersBtn">
+      👥
+      <span class="sidebar-tooltip">Players &amp; Chat</span>
+    </button>
+    <div class="sidebar-divider"></div>
+    <button class="sidebar-icon-btn" id="sidebarRacesMgrBtn">
+      🏁
+      <span class="sidebar-tooltip">Races &amp; Checkpoints</span>
+    </button>
+    <div class="sidebar-divider"></div>
+    <button class="sidebar-icon-btn" id="sidebarHeatmapBtn">
+      🔥
+      <span class="sidebar-tooltip">Heatmap</span>
+    </button>
+    <div class="sidebar-divider"></div>
+    <button class="sidebar-icon-btn active" id="togglePlayerIconsBtn" title="Toggle player icons">
+      👤
+      <span class="sidebar-tooltip">Toggle Player Icons</span>
+    </button>
+  </div>
+
+  <!-- Checkpoint Manager Panel -->
+  <div id="checkpoint-manager">
+    <div class="cp-manager-header">
+      <span class="cp-title">Checkpoint Manager</span>
+      <span class="cp-count-badge" id="cpCountBadge">0</span>
+    </div>
+    <div class="cp-manager-body" id="cpManagerBody">
+      <div class="cp-no-race">No race loaded</div>
+    </div>
+  </div>
+
+  <!-- Player List Sidebar -->
+  <div class="player-list-sidebar" id="playerListSidebar">
+    <div class="player-list-header">
+      <span>Players Online</span>
+      <span class="player-count" id="playerCount">0</span>
+    </div>
+    <div class="player-search-area">
+      <input type="text" id="playerSearch" placeholder="Search players..." />
+    </div>
+    <div class="player-list-content" id="playerList"></div>
+  </div>
+
+  <!-- Location Tracker Panel -->
+  <div class="loc-tracker-panel" id="locTrackerPanel">
+    <div class="loc-tracker-header">
+      <span class="loc-tracker-name" id="locTrackerName">—</span>
+      <button class="loc-tracker-close" id="locTrackerClose">✕</button>
+    </div>
+    <div class="loc-tracker-body" id="locTrackerBody">
+      <div class="loc-tracker-empty">No location data yet.</div>
+    </div>
+    <div class="loc-tracker-footer">Last 30 minutes · updates every second</div>
+  </div>
+
+  <!-- Heatmap Panel -->
+  <div class="heatmap-panel" id="heatmapPanel">
+    <div class="heatmap-header">
+      <span>🔥 Heatmap</span>
+    </div>
+    <div class="heatmap-body">
+      <button class="heatmap-mode-btn" id="hmSessionBtn">
+        <div class="hm-btn-title">📍 This Session</div>
+        <div class="hm-btn-sub">Since app started</div>
+      </button>
+      <button class="heatmap-mode-btn" id="hmAllTimeBtn">
+        <div class="hm-btn-title">🗂 All Time</div>
+        <div class="hm-btn-sub">Persistent across sessions</div>
+      </button>
+      <button class="heatmap-off-btn" id="hmOffBtn">Turn Off</button>
+      <div class="hm-radius-row">
+        <div class="hm-radius-label">
+          <span>Area Size</span>
+          <span id="hmRadiusVal">35</span>
+        </div>
+        <input type="range" id="hmRadiusSlider" min="5" max="120" step="1" value="35" style="width:100%;accent-color:#ff6600;" />
+      </div>
+      <div class="heatmap-legend">
+        <div class="hm-legend-title">Activity Level</div>
+        <div class="hm-legend-bar"></div>
+        <div class="hm-legend-labels">
+          <span>0%</span><span>20%</span><span>40%</span><span>60%</span><span>80%</span><span>100%</span>
+        </div>
+        <div class="hm-legend-rows">
+          <div class="hm-legend-row"><span class="hm-swatch" style="background:#000033"></span>Rarely visited</div>
+          <div class="hm-legend-row"><span class="hm-swatch" style="background:#0000ff"></span>Occasionally visited</div>
+          <div class="hm-legend-row"><span class="hm-swatch" style="background:#00ffff"></span>Moderately active</div>
+          <div class="hm-legend-row"><span class="hm-swatch" style="background:#ffff00"></span>Frequently visited</div>
+          <div class="hm-legend-row"><span class="hm-swatch" style="background:#ff6600"></span>Very active</div>
+          <div class="hm-legend-row"><span class="hm-swatch" style="background:#ff0000"></span>Hotspot (most visited)</div>
+        </div>
+      </div>
+      <div class="heatmap-data-info" id="hmDataInfo">No data yet</div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <!-- Chat Sidebar -->
+  <div class="chat-sidebar" id="chatSidebar">
+    <div class="chat-header">In-Game Chat <span id="chatStatus" class="chat-status"></span></div>
+    <div class="chat-messages" id="chatMessages"></div>
+    <div class="username-area">
+      <input type="text" id="usernameField" placeholder="Username (optional)" maxlength="32" />
+      <label class="announce-label"><input type="checkbox" id="announceCheckbox" /> Announcement</label>
+    </div>
+    <div class="color-add-area">
+      <input type="text" id="hexColorInput" placeholder="#RRGGBB" maxlength="7" />
+      <button id="addColorBtn">Add</button>
+    </div>
+    <div class="color-selector-area" id="colorSelector"></div>
+    <div class="chat-input-area">
+      <div class="chat-input-wrapper" id="chatInputWrapper">
+        <span class="map-link-pill" id="mapLinkPill" style="display:none;"><span id="pillText">📍 map link</span> <span class="pill-remove" id="pillRemove">✕</span></span>
+        <input type="text" id="chatInput" placeholder="Send a message..." />
+      </div>
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+  <!-- Race Menu Button (hidden, kept for JS compat) & Races Sidebar Panel -->
+  <button id="raceMenuBtn">Races <span class="arrow">▼</span></button>
+  <div id="raceMenuPanel">
+    <div class="race-sidebar-header">
+      <span>Races</span>
+      <span class="race-sidebar-loaded-tag" id="raceSidebarLoadedTag"></span>
+    </div>
+    <div class="race-sidebar-body">
+    <div class="race-menu-section">
+      <div class="race-menu-section-title">Save</div>
+      <div class="race-save-row">
+        <input type="text" id="raceSaveName" placeholder="Race name..." maxlength="40" />
+        <button class="race-menu-btn" id="raceSaveBtn">Save</button>
+      </div>
+    </div>
+    <div class="race-menu-section">
+      <div class="race-menu-section-title-row">
+        <span class="race-menu-section-title">Saved Races</span>
+        <button class="race-new-folder-btn" id="raceNewFolderBtn">📁 New Folder</button>
+      </div>
+      <div class="race-save-row" id="newFolderRow" style="display:none; margin-bottom:8px;">
+        <input type="text" id="folderNameInput" placeholder="Folder name..." maxlength="40" />
+        <button class="race-menu-btn" id="folderCreateBtn">Create</button>
+      </div>
+      <div class="saved-races-list" id="savedRacesList">
+        <div class="no-races-msg">No saved races yet</div>
+      </div>
+    </div>
+    <div class="race-menu-section">
+      <div class="race-menu-section-title">Import / Export</div>
+      <div class="race-save-row">
+        <button class="race-menu-btn full-width" id="raceImportBtn">Import</button>
+        <button class="race-menu-btn full-width" id="raceExportBtn">Export</button>
+      </div>
+    </div>
+    </div><!-- .race-sidebar-body -->
+  </div>
+
+  <button id="settingsBtn">⚙️</button>
+  <!-- Legacy stubs kept for JS compat — not visible -->
+  <div id="replaceRaceSection" style="display:none!important"></div>
+  <span id="loadedRaceNameLabel" style="display:none!important"></span>
+  <button id="replaceRaceBtn" style="display:none!important"></button>
+  <button id="raceUnloadBtn" style="display:none!important"></button>
+
+  <!-- Save Race Confirmation Modal -->
+  <div class="modal-overlay" id="saveConfirmModal">
+    <div class="modal-content" style="max-width:360px;">
+      <div class="modal-header">
+        <h2>Save Race</h2>
+      </div>
+      <p style="color:#ccc;font-size:13px;margin:0 0 14px;">Save as new race: <strong id="confirmSaveNameDisplay" style="color:#00b1e0;"></strong></p>
+      <label style="display:flex;align-items:center;gap:8px;color:#888;font-size:12px;margin-bottom:20px;cursor:pointer;">
+        <input type="checkbox" id="neverShowSaveConfirm" />
+        Never show this confirmation again
+      </label>
+      <div class="modal-buttons">
+        <button class="modal-btn modal-btn-primary" id="confirmSaveYesBtn">Save</button>
+        <button class="modal-btn modal-btn-secondary" id="confirmSaveNoBtn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="settingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Configuration</h2>
+        <button class="modal-close" id="closeSettings">&times;</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="manual">Manual API Config</button>
+        <button class="modal-tab" data-tab="encrypted">Encrypted Config</button>
+        <button class="modal-tab" data-tab="racetrack">Race Track</button>
+        <button class="modal-tab" data-tab="keybinds">Keybinds</button>
+      </div>
+
+      <div class="tab-content active" id="manual-tab">
+        <div class="settings-section">
+          <label>API Base URL</label>
+          <div style="position: relative;">
+            <input type="password" id="apiBaseUrl" placeholder="http://example.com:21120" />
+            <button class="toggle-blur" id="toggleBaseUrl">Show</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <label>Chat History URL</label>
+          <div style="position: relative;">
+            <input type="password" id="chatHistoryUrl" placeholder="http://example.com:3456/chat" />
+            <button class="toggle-blur" id="toggleChatUrl">Show</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <label>API Password</label>
+          <div style="position: relative;">
+            <input type="password" id="apiPassword" class="blurred-input" placeholder="••••••••••••" />
+            <button class="toggle-blur" id="togglePassword">Show</button>
+          </div>
+        </div>
+        <div class="settings-section">
+          <label>CORS Proxy <span style="font-size:10px;color:#666;">(browser only — e.g. https://corsproxy.io/?)</span></label>
+          <input type="text" id="corsProxy" placeholder="Leave blank if server has CORS enabled" style="width:100%;box-sizing:border-box;" />
+        </div>
+        <div class="modal-buttons">
+          <button class="modal-btn modal-btn-primary" id="saveConfigBtn">Save Config</button>
+          <button class="modal-btn modal-btn-secondary" id="cancelConfigBtn">Cancel</button>
+          <button class="modal-btn" id="resetConfigBtn" style="background:#c0392b;color:#fff;border-color:#c0392b;">Reset</button>
+        </div>
+      </div>
+
+      <div class="tab-content" id="encrypted-tab">
+        <div class="info-text">Server administrators can generate and share encrypted configurations. Paste the encrypted code below:</div>
+        <div class="settings-section">
+          <label>Encrypted API Config Code</label>
+          <textarea id="encryptedConfigInput" placeholder="Paste encrypted API config here (Receieved from server administrator)..." rows="6"></textarea>
+        </div>
+        <div class="modal-buttons">
+          <button class="modal-btn modal-btn-primary" id="applyEncryptedBtn">Apply encrypted Config</button>
+          <button class="modal-btn modal-btn-secondary" id="cancelEncryptedBtn">Cancel</button>
+        </div>
+        <div style="margin-top: 20px; border-top: 1px solid #444; padding-top: 20px;">
+          <label style="display: block; margin-bottom: 10px;">Or Export Current Config as Encrypted</label>
+          <button class="copy-btn" id="exportConfigBtn">Export Config As Encrypted</button>
+          <div class="config-display" id="exportedConfig" style="display: none; margin-top: 10px;"></div>
+        </div>
+      </div>
+
+      <div class="tab-content" id="racetrack-tab">
+        <div class="info-text">Currentrace. Use the <strong style="color:#00b1e0">Import</strong> / <strong style="color:#00b1e0">Export</strong> on the map to well... import and export a race.</div>
+        <div class="settings-section">
+          <label></label>
+          <textarea id="raceTrackInput" placeholder="No race loaded. Use the Import button to load one." rows="12" readonly style="opacity:0.7; cursor:default;"></textarea>
+        </div>
+      </div>
+
+      <div class="tab-content" id="keybinds-tab">
+        <div class="info-text"></div>
+        <div class="settings-section">
+          <table style="width: 100%; border-collapse: collapse; color: #fff;">
+            <tr style="border-bottom: 1px solid #444;">
+              <td style="padding: 8px; text-align: left; font-weight: bold;">Action</td>
+              <td style="padding: 8px; text-align: left; font-weight: bold;">Keybind</td>
+            </tr>
+            <tr style="border-bottom: 1px solid #444;">
+              <td style="padding: 8px;">Send Chat Message</td>
+              <td style="padding: 8px;"><code style="background: rgba(0, 177, 224, 0.8); padding: 2px 6px; border-radius: 3px;">Enter</code></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #444;">
+              <td style="padding: 8px;">Add Map Link to Message</td>
+              <td style="padding: 8px;"><code style="background: rgba(0, 177, 224, 0.8); padding: 2px 6px; border-radius: 3px;">F</code></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #444;">
+              <td style="padding: 8px;">Select Multiple Map Links</td>
+              <td style="padding: 8px;"><code style="background: rgba(0, 177, 224, 0.8); padding: 2px 6px; border-radius: 3px;">Shift + F</code></td>
+            </tr>
+            <tr style="border-bottom: 1px solid #444;">
+              <td style="padding: 8px;">Open Settings</td>
+              <td style="padding: 8px;"><code style="background: rgba(0, 177, 224, 0.8); padding: 2px 6px; border-radius: 3px;">Escape</code></td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  <script src="renderer.js"></script>
+
+</body>
+</html>
