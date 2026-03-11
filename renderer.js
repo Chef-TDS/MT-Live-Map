@@ -567,10 +567,7 @@ map.on('dragend', () => { setTimeout(() => { _mapDragged = false; }, 50); });
 // ── Heatmap ───────────────────────────────────────────────────────────────────
 const HEATMAP_STORAGE_KEY = 'mt_heatmap_alltime';
 const HEATMAP_CELL        = 50;
-let   hmRadius            = 20;
-let   hmZoomBias          = 3.0;
-let   hmIntensityAuto     = false;
-let   hmIntensityCap      = 1.2;
+let   hmRadius            = 35;
 
 // Session data: { 'cx,cy': count }
 const hmSessionCells = {};
@@ -667,16 +664,16 @@ const HeatmapLayer = L.Layer.extend({
     const keys  = Object.keys(cells);
     if (!keys.length) return;
 
-    // hmRadius = screen pixels. hmZoomBias adds/removes pixels per zoom level.
-    // Keep both in screen space, then divide by SCALE for canvas coords.
-    const zoom        = map.getZoom();
-    const screenR     = Math.max(4, hmRadius + zoom * hmZoomBias * 10);
-    const r           = Math.max(1, Math.round(screenR / SCALE));
+    // Radius grows with zoom so blobs represent the same geo area.
+    // Use map's own zoom→pixel scale for accuracy.
+    const zoom    = map.getZoom();
+    const pxPerUnit = map.project([1, 0], zoom).x - map.project([0, 0], zoom).x;
+    // hmRadius is in "world units" conceptually; convert to canvas px
+    const r = Math.max(3, Math.round(hmRadius * Math.abs(pxPerUnit) / SCALE));
 
-    // Scale blob alpha inversely with area so large blobs don't saturate everything.
-    // Reference area = r of 10px canvas = pi*100; scale down as r^2 grows.
-    const REF_R      = 10;
-    const BLOB_ALPHA = Math.min(0.25, Math.max(0.01, 0.06 * (REF_R * REF_R) / (r * r)));
+    // Draw every blob at a FLAT low alpha so they accumulate naturally.
+    // No per-blob intensity — just let overlap build up the heat.
+    const BLOB_ALPHA = 0.06;
     for (const key of keys) {
       const [cx, cy] = key.split(',').map(Number);
       const { mapX, mapY } = worldToMap(cx * HEATMAP_CELL, cy * HEATMAP_CELL);
@@ -702,14 +699,10 @@ const HeatmapLayer = L.Layer.extend({
     for (let i = 3; i < d.length; i += 4) if (d[i] > maxA) maxA = d[i];
     if (maxA === 0) return;
 
-    // In manual mode, cap is a % of maxA — so the top cap% of activity = red,
-    // everything else is stretched below. In auto mode cap=1.0 (full range).
-    const capA = hmIntensityAuto ? maxA : Math.max(1, maxA * hmIntensityCap);
-
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i + 3];
       if (a === 0) continue;
-      const norm = Math.min(255, Math.round((a / capA) * 255));
+      const norm = Math.round((a / maxA) * 255);
       const idx  = norm * 4;
       d[i]     = palette[idx];
       d[i + 1] = palette[idx + 1];
@@ -750,36 +743,6 @@ document.getElementById('hmRadiusSlider').addEventListener('input', function() {
   hmRadius = parseInt(this.value);
   document.getElementById('hmRadiusVal').textContent = hmRadius;
   if (hmMode && hmLayer) hmLayer._scheduleRedraw();
-});
-document.getElementById('hmZoomSlider').addEventListener('input', function() {
-  hmZoomBias = parseFloat(this.value);
-  document.getElementById('hmZoomVal').textContent = this.value;
-  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
-});
-document.getElementById('hmIntensityAutoBtn').addEventListener('click', () => {
-  hmIntensityAuto = true;
-  document.getElementById('hmIntensityAutoBtn').classList.add('active');
-  document.getElementById('hmIntensityManualBtn').classList.remove('active');
-  document.getElementById('hmIntensityManualRow').style.display = 'none';
-  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
-});
-document.getElementById('hmIntensityManualBtn').addEventListener('click', () => {
-  hmIntensityAuto = false;
-  document.getElementById('hmIntensityManualBtn').classList.add('active');
-  document.getElementById('hmIntensityAutoBtn').classList.remove('active');
-  document.getElementById('hmIntensityManualRow').style.display = '';
-  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
-});
-document.getElementById('hmIntensitySlider').addEventListener('input', function() {
-  hmIntensityCap = parseFloat(this.value);
-  document.getElementById('hmIntensityVal').textContent = Math.round(hmIntensityCap * 100) + '%';
-  if (hmMode && hmLayer) hmLayer._scheduleRedraw();
-});
-document.getElementById('hmAdvancedBtn').addEventListener('click', function() {
-  const panel = document.getElementById('hmAdvancedPanel');
-  const open  = panel.style.display !== 'none';
-  panel.style.display = open ? 'none' : '';
-  this.textContent = open ? '▶ Advanced' : '▼ Advanced';
 });
 document.getElementById('hmOffBtn').addEventListener('click', () => {
   setHeatmapMode(null);
