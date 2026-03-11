@@ -1164,6 +1164,7 @@ setupBlurToggle('apiBaseUrl', 'toggleBaseUrl', true);
 setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
+// v2-cors-debug
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
   const corsEl = document.getElementById('corsProxy');
   const config = {
