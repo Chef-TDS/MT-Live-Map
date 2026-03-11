@@ -700,6 +700,16 @@ document.addEventListener('visibilitychange', () => {
     console.log('Window hidden - keeping chat polling active');
   }
 });
+// chat status helper — must be defined before pollIncomingChat is called
+const chatStatusEl = document.getElementById('chatStatus');
+function setChatStatus(text, color = '#fff') {
+  if (chatStatusEl) {
+    chatStatusEl.textContent = text;
+    chatStatusEl.style.color = color;
+  }
+}
+setChatStatus('...');
+
 pollInterval = setInterval(pollPlayers, 1000);
 pollPlayers();
 let chatPollInterval = setInterval(pollIncomingChat, 2000);
@@ -784,18 +794,6 @@ if (chatInputEl) {
 }
 let lastChatId = 0; 
 const recentlySentMsgs = new Set();
-
-// chat status helper (shows online/offline/error in header)
-const chatStatusEl = document.getElementById('chatStatus');
-function setChatStatus(text, color = '#fff') {
-  if (chatStatusEl) {
-    chatStatusEl.textContent = text;
-    chatStatusEl.style.color = color;
-  }
-}
-
-// initialize to unknown until first poll
-setChatStatus('...');
 
 function trackSentMessage(text) {
   recentlySentMsgs.add(text);
