@@ -627,7 +627,8 @@ async function pollPlayers() {
   if (!isVisible || pendingUpdate) return;
   pendingUpdate = true;
   try {
-    const res = await fetch(`${CORS_PROXY}${API_URL}?password=${API_PASSWORD}`);
+    const target = `${API_URL}?password=${API_PASSWORD}`;
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(target)}` : target);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -751,7 +752,7 @@ async function sendChatMessage(message) {
     displayChatMessage(displayName, friendlyDisplay, true, isAnnouncement);
     const typeParam = isAnnouncement ? 'announce' : 'message';
     const url = `${CHAT_API_URL}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`;
-    const res = await fetch(`${CORS_PROXY}${url}`, { method: 'POST' });
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(url)}` : url, { method: 'POST' });
     if (!res.ok) {
       console.warn(`Chat API response: ${res.status}`);
       displayChatMessage('System', `Failed to send message (HTTP ${res.status})`);
@@ -804,7 +805,8 @@ function trackSentMessage(text) {
 }
 async function pollIncomingChat() {
   try {
-    const res = await fetch(`${CORS_PROXY}${CHAT_HISTORY_URL}?since=${lastChatId}`);
+    const chatTarget = `${CHAT_HISTORY_URL}?since=${lastChatId}`;
+    const res = await fetch(CORS_PROXY ? `${CORS_PROXY}${encodeURIComponent(chatTarget)}` : chatTarget);
     if (!res.ok) {
       if (lastChatStatus !== 'error') {
         displayChatMessage('System', `Chat fetch failed (HTTP ${res.status})`);
