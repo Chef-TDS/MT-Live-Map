@@ -2,7 +2,23 @@ let API_PASSWORD = "aaac9f1b3f62";
 let API_URL = "http://109.228.37.5:21120/player/list";
 let CHAT_API_URL = "http://109.228.37.5:21120/chat";
 let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
-let CORS_PROXY = ""; // optional: e.g. "https://corsproxy.io/?" prepended to API calls
+let CORS_PROXY = "";
+
+// Load saved config immediately so it overrides the defaults above
+(function loadConfigFromStorageEarly() {
+  try {
+    const stored = localStorage.getItem('mtconfig');
+    if (!stored) return;
+    const config = JSON.parse(stored);
+    if (config.api_base) {
+      API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
+      CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
+    }
+    if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+    if (config.api_password) API_PASSWORD = config.api_password;
+    if (config.cors_proxy !== undefined) CORS_PROXY = config.cors_proxy;
+  } catch(e) {}
+})();
 const MAP = {
   width: 6000,
   height: 8000
@@ -1100,6 +1116,8 @@ modalTabs.forEach(tab => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(tabName + '-tab').classList.add('active');
+    // Populate fields when switching to manual tab
+    if (tabName === 'manual') populateManualFields();
   });
 });
 
