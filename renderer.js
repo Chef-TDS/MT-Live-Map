@@ -708,6 +708,9 @@ function setChatStatus(text, color = '#fff') {
 }
 setChatStatus('...');
 
+let lastChatId = 0;
+const recentlySentMsgs = new Set();
+
 pollInterval = setInterval(pollPlayers, 1000);
 pollPlayers();
 let chatPollInterval = setInterval(pollIncomingChat, 2000);
@@ -790,9 +793,6 @@ if (chatInputEl) {
     }
   });
 }
-let lastChatId = 0; 
-const recentlySentMsgs = new Set();
-
 function trackSentMessage(text) {
   recentlySentMsgs.add(text);
   setTimeout(() => recentlySentMsgs.delete(text), 10000);
@@ -841,8 +841,6 @@ async function pollIncomingChat() {
     console.warn('pollIncomingChat error', err);
   }
 }
-setInterval(pollIncomingChat, 2000);
-pollIncomingChat();
 function initializeColorPalette() {
   const selector = document.getElementById('colorSelector');
   selector.innerHTML = '';
