@@ -1,10 +1,10 @@
-let API_PASSWORD = "aaac9f1b3f62";
-let API_URL = "http://109.228.37.5:21120/player/list";
-let CHAT_API_URL = "http://109.228.37.5:21120/chat";
-let CHAT_HISTORY_URL = "http://109.228.37.5:3456/chat";
+let API_PASSWORD = "";
+let API_URL = "";
+let CHAT_API_URL = "";
+let CHAT_HISTORY_URL = "";
 // true = full access; false = players-on-map only (no chat, no location history)
 // Manual config always grants full access. Encrypted config requires allow_all flag.
-let ALLOW_ALL = true;
+let ALLOW_ALL = false;
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
 
 // Cloudflare Worker proxy — routes HTTP game server requests through HTTPS
@@ -15,7 +15,8 @@ async function fetchWithProxy(url, options = {}) {
   return fetch(CORS_PROXY + encodeURIComponent(url), options);
 }
 
-// Load saved config immediately so it overrides the defaults above
+// Load saved config from localStorage. In browser mode, if nothing is stored,
+// the app stays unconfigured and will prompt the user to enter a config code.
 (function loadConfigFromStorageEarly() {
   try {
     const stored = localStorage.getItem('mtconfig');
@@ -32,6 +33,16 @@ async function fetchWithProxy(url, options = {}) {
     else ALLOW_ALL = true;
   } catch(e) {}
 })();
+
+// In browser mode, if no config was loaded, auto-open the settings modal
+// so the user is prompted to enter their config code rather than seeing a
+// silently broken/empty map.
+if (!IS_ELECTRON && !API_PASSWORD) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const settingsModal = document.getElementById('settingsModal');
+    if (settingsModal) settingsModal.classList.add('active');
+  });
+}
 const MAP = {
   width: 6000,
   height: 8000
