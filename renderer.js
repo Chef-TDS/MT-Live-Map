@@ -1144,8 +1144,14 @@ const settingsModal = document.getElementById('settingsModal');
 const closeSettingsBtn = document.getElementById('closeSettings');
 
 function populateManualFields() {
-  const isEncryptedSource = getCurrentConfig().config_source === 'encrypted';
-  const config = isEncryptedSource ? { api_base: '', chat_history_url: '', api_password: '' } : getCurrentConfig();
+  const currentCfg = getCurrentConfig();
+  const isEncryptedSource = currentCfg.config_source === 'encrypted';
+  // In browser mode, never expose any config values in the manual fields —
+  // the user must re-enter them, or use the encrypted config tab.
+  // In Electron (local app), pre-fill fields for convenience since the config
+  // is stored locally and only the machine owner can access it.
+  const canReveal = IS_ELECTRON && !isEncryptedSource;
+  const config = canReveal ? currentCfg : { api_base: '', chat_history_url: '', api_password: '' };
   document.getElementById('apiBaseUrl').type = 'password';
   document.getElementById('chatHistoryUrl').type = 'password';
   document.getElementById('apiPassword').type = 'password';
@@ -1153,7 +1159,7 @@ function populateManualFields() {
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
   const corsProxyEl = document.getElementById('corsProxy');
-  if (corsProxyEl) corsProxyEl.value = config.cors_proxy || '';
+  if (corsProxyEl) corsProxyEl.value = canReveal ? (currentCfg.cors_proxy || '') : '';
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
