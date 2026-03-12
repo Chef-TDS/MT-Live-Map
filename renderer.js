@@ -1216,6 +1216,20 @@ setupBlurToggle('apiBaseUrl', 'toggleBaseUrl', true);
 setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
+
+function restartPolling() {
+  // Clear existing intervals
+  if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
+  if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+  // Restart player polling
+  pollInterval = setInterval(pollPlayers, 1000);
+  pollPlayers();
+  // Restart chat polling only if allowed
+  if (ALLOW_ALL) {
+    chatPollInterval = setInterval(pollIncomingChat, 2000);
+    pollIncomingChat();
+  }
+}
 function isValidHttpUrl(str) {
   try {
     const u = new URL(str);
@@ -1255,9 +1269,9 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
   
-  alert('Configuration saved!');
   settingsModal.classList.remove('active');
-  location.reload();
+  restartPolling();
+  alert('Configuration saved!');
 });
 
 document.getElementById('cancelConfigBtn').addEventListener('click', () => {
@@ -1308,9 +1322,9 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
   ALLOW_ALL = !!config.allow_all;
   
-  alert('Configuration applied!');
   settingsModal.classList.remove('active');
-  location.reload();
+  restartPolling();
+  alert('Configuration applied!');
 });
 
 document.getElementById('cancelEncryptedBtn').addEventListener('click', () => {
