@@ -2,17 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <!-- Content Security Policy: restrict sources to self + known CDNs, block inline eval -->
-  <meta http-equiv="Content-Security-Policy" content="
-    default-src 'self';
-    script-src  'self' https://unpkg.com https://cdnjs.cloudflare.com;
-    style-src   'self' 'unsafe-inline' https://unpkg.com;
-    img-src     'self' data: blob:;
-    connect-src 'self' https://stupid-map.vandeveldepieter-be.workers.dev;
-    font-src    'self';
-    object-src  'none';
-    base-uri    'self';
-  ">
+  <!-- Content Security Policy — connect-src allows http/https because the
+       game server URL is set at runtime. Scripts are locked to known CDNs. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: blob:; connect-src 'self' http: https:; object-src 'none'; base-uri 'self';">
   <title>Motor Town Live Map</title>
 
   <!-- Leaflet CSS -->
