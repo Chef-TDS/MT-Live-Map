@@ -11,57 +11,27 @@ const IS_ELECTRON = navigator.userAgent.includes('Electron');
 const CORS_PROXY = IS_ELECTRON ? '' : 'https://stupid-map.vandeveldepieter-be.workers.dev/?url=';
 
 async function fetchWithProxy(url, options = {}) {
-  // Always send the API password as a header, never in the URL query string,
-  // so it is not logged by proxies, servers, or browser history.
-  if (API_PASSWORD) {
-    options = {
-      ...options,
-      headers: {
-        ...(options.headers || {}),
-        'X-API-Password': API_PASSWORD
-      }
-    };
-  }
   if (IS_ELECTRON) return fetch(url, options);
   return fetch(CORS_PROXY + encodeURIComponent(url), options);
 }
 
-// Load saved config from localStorage.
-// In browser mode, if nothing is stored the app stays unconfigured and
-// will prompt the user to enter a config code before anything works.
+// Load saved config immediately so it overrides the defaults above
 (function loadConfigFromStorageEarly() {
   try {
     const stored = localStorage.getItem('mtconfig');
     if (!stored) return;
     const config = JSON.parse(stored);
-
-    if (config.config_source === 'encrypted') {
-      // Credentials are stored only as an encrypted blob — decrypt at runtime
-      if (!config.encrypted_blob) return;
-      // CryptoJS is loaded via <script> tag so may not be available this early;
-      // defer decryption to loadConfigFromStorage() which runs after scripts load.
-      return;
-    }
-
-    // Manual config — credentials stored directly (user's own machine only)
     if (config.api_base) {
       API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
       CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
-    ALLOW_ALL = true;
+    // Manual config always full access; encrypted config respects allow_all flag
+    if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
+    else ALLOW_ALL = true;
   } catch(e) {}
 })();
-
-// In browser mode, if no config is present auto-open the settings modal
-// so the visitor is immediately prompted for a config code.
-if (!IS_ELECTRON && !API_PASSWORD) {
-  document.addEventListener('DOMContentLoaded', () => {
-    const m = document.getElementById('settingsModal');
-    if (m) m.classList.add('active');
-  });
-}
 const MAP = {
   width: 6000,
   height: 8000
@@ -222,7 +192,12 @@ function arrowMapUnits() {
 let rotEditActive     = false;
 let rotEditIdx        = null;
 let rotEditHoldTimer  = null;
-let chatColors = JSON.parse(localStorage.getItem('chatColors')) || ['FFFFFF', 'FF0000', '00FF00', '0000FF'];
+const HEX_COLOR_RE = /^[0-9A-F]{6}$/i;
+const _rawColors = JSON.parse(localStorage.getItem('chatColors') || 'null');
+let chatColors = Array.isArray(_rawColors)
+  ? _rawColors.filter(c => typeof c === 'string' && HEX_COLOR_RE.test(c))
+  : ['FFFFFF', 'FF0000', '00FF00', '0000FF'];
+if (chatColors.length === 0) chatColors = ['FFFFFF', 'FF0000', '00FF00', '0000FF'];
 let selectedColor = chatColors[0];
 let chatUsername = localStorage.getItem('chatUsername') || '';
 let allPlayers = []; 
@@ -791,15 +766,27 @@ function displayChatMessage(name, message, isOwn = false, isAnnouncement = false
   container.scrollTop = container.scrollHeight;
   return messageEl;
 }
+const CHAT_MAX_LENGTH = 500;    // characters per message
+const CHAT_COOLDOWN_MS = 1500;  // minimum ms between sends
+let _lastChatSendTime = 0;
+
 async function sendChatMessage(message) {
   if (!message || !message.trim()) {
     if (pendingMapLinks.length === 0) return;
   }
+
+  // Rate limit
+  const now = Date.now();
+  if (now - _lastChatSendTime < CHAT_COOLDOWN_MS) return;
+  _lastChatSendTime = now;
+
+  // Length cap
+  const trimmed = message.trim().slice(0, CHAT_MAX_LENGTH);
   try {
     const combinedLink = pendingMapLinks.join(' & ');
     const fullMessage = combinedLink
-      ? (message.trim() ? `${combinedLink} ${message.trim()}` : combinedLink)
-      : message;
+      ? (trimmed ? `${combinedLink} ${trimmed}` : combinedLink)
+      : trimmed;
     clearMapLinkPills();
     const displayMsg = chatUsername ? `[${chatUsername}] ${fullMessage}` : fullMessage;
     trackSentMessage(fullMessage);
@@ -1118,18 +1105,10 @@ function decryptConfig(encryptedText) {
 }
 
 function getCurrentConfig() {
-  // Read from localStorage so it stays in sync with what's actually saved.
-  // For encrypted configs, return a sanitised object — never the plaintext credentials.
+  // Read from localStorage so it stays in sync with what's actually saved
   try {
     const stored = localStorage.getItem('mtconfig');
-    if (stored) {
-      const config = JSON.parse(stored);
-      if (config.config_source === 'encrypted') {
-        // Strip any legacy plaintext fields that may have been stored by old versions
-        return { config_source: 'encrypted', allow_all: !!config.allow_all, encrypted_blob: config.encrypted_blob };
-      }
-      return config;
-    }
+    if (stored) return JSON.parse(stored);
   } catch(e) {}
   return { api_base: '', chat_history_url: '', api_password: '' };
 }
@@ -1139,23 +1118,6 @@ function loadConfigFromStorage() {
   if (stored) {
     try {
       const config = JSON.parse(stored);
-
-      if (config.config_source === 'encrypted') {
-        // Decrypt credentials from the stored blob — they are never stored in plaintext
-        if (!config.encrypted_blob) return;
-        const decrypted = decryptConfig(config.encrypted_blob);
-        if (!decrypted) return;
-        if (decrypted.api_base) {
-          API_URL = decrypted.api_base.replace(/\/$/, '') + '/player/list';
-          CHAT_API_URL = decrypted.api_base.replace(/\/$/, '') + '/chat';
-        }
-        if (decrypted.chat_history_url) CHAT_HISTORY_URL = decrypted.chat_history_url;
-        if (decrypted.api_password) API_PASSWORD = decrypted.api_password;
-        ALLOW_ALL = !!config.allow_all;
-        return;
-      }
-
-      // Manual config
       if (config.api_base) {
         API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
         CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
@@ -1254,6 +1216,13 @@ setupBlurToggle('apiBaseUrl', 'toggleBaseUrl', true);
 setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
+function isValidHttpUrl(str) {
+  try {
+    const u = new URL(str);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch(_) { return false; }
+}
+
 document.getElementById('saveConfigBtn').addEventListener('click', () => {
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
@@ -1266,6 +1235,16 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
 
   if (!config.api_base || !config.api_password) {
     alert('API Base URL and Password are required');
+    return;
+  }
+
+  if (!isValidHttpUrl(config.api_base)) {
+    alert('API Base URL must start with http:// or https://');
+    return;
+  }
+
+  if (config.chat_history_url && !isValidHttpUrl(config.chat_history_url)) {
+    alert('Chat History URL must start with http:// or https://');
     return;
   }
   
@@ -1293,6 +1272,7 @@ document.getElementById('resetConfigBtn').addEventListener('click', () => {
   API_URL = '';
   CHAT_API_URL = '';
   CHAT_HISTORY_URL = '';
+  ALLOW_ALL = false;
   // Clear all player markers from the map
   Object.keys(markers).forEach(id => {
     map.removeLayer(markers[id]);
@@ -1321,9 +1301,7 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
     return;
   }
   
-  // Store only the encrypted blob — never the plaintext credentials.
-  // The runtime values (API_PASSWORD etc.) live only in memory until reload.
-  saveConfigToStorage({ encrypted_blob: encryptedText, config_source: 'encrypted', allow_all: !!config.allow_all });
+  saveConfigToStorage({ ...config, config_source: 'encrypted' });
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
@@ -2196,6 +2174,11 @@ let pendingSaveName = null;
 let pendingSaveJson = null;
 
 function doSaveRace(name, jsonText) {
+  // Guard against prototype pollution via crafted race names
+  if (name === '__proto__' || name === 'constructor' || name === 'prototype') {
+    alert('Invalid race name.');
+    return;
+  }
   const store = getStore();
   store.races[name] = jsonText;
   // Only add to tree if not already present somewhere
