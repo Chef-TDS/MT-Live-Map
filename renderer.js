@@ -1165,24 +1165,8 @@ function populateManualFields() {
   document.getElementById('toggleChatUrl').textContent = 'Show';
 }
 
-// In browser mode, hide the Manual Config tab entirely — users must use encrypted configs.
-// This prevents the server URL/password from ever being visible in the browser UI.
-if (!IS_ELECTRON) {
-  const manualTabBtn = document.querySelector('.modal-tab[data-tab="manual"]');
-  const manualTabContent = document.getElementById('manual-tab');
-  if (manualTabBtn) manualTabBtn.style.display = 'none';
-  if (manualTabContent) manualTabContent.style.display = 'none';
-  // Make encrypted tab the default active tab
-  document.querySelectorAll('.modal-tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-  const encTabBtn = document.querySelector('.modal-tab[data-tab="encrypted"]');
-  const encTabContent = document.getElementById('encrypted-tab');
-  if (encTabBtn) encTabBtn.classList.add('active');
-  if (encTabContent) encTabContent.classList.add('active');
-}
-
 settingsBtn.addEventListener('click', () => {
-  if (IS_ELECTRON) populateManualFields();
+  populateManualFields();
   // Only allow exporting if config was set manually — prevent privilege escalation
   const canExport = getCurrentConfig().config_source !== 'encrypted';
   document.getElementById('exportConfigSection').style.display = canExport ? '' : 'none';
