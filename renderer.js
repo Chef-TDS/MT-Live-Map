@@ -107,6 +107,114 @@ const defaultIcon = L.icon({
   iconAnchor: [20, 15],
   popupAnchor: [0, -20]
 });
+
+// Role-based icon support (file-based icons in `assets/`)
+const adminSet = new Set();
+const policeSet = new Set();
+const roleIconCache = {};
+
+function iconForPlayer(id) {
+  if (adminSet.has(id)) {
+    if (!roleIconCache.admin) roleIconCache.admin = L.icon({
+      iconUrl: 'assets/admin.png',
+      iconSize: [30, 30],
+      iconAnchor: [20, 15],
+      popupAnchor: [0, -20]
+    });
+    return roleIconCache.admin;
+  }
+  if (policeSet.has(id)) {
+    if (!roleIconCache.police) roleIconCache.police = L.icon({
+      iconUrl: 'assets/police.png',
+      iconSize: [30, 30],
+      iconAnchor: [20, 15],
+      popupAnchor: [0, -20]
+    });
+    return roleIconCache.police;
+  }
+  return defaultIcon;
+}
+
+function updateMarkerRoleIcon(id) {
+  const m = markers[id];
+  if (!m) return;
+  const newIcon = iconForPlayer(id);
+  m.setIcon(newIcon);
+}
+
+function updateMarkerZIndex(id) {
+  const m = markers[id];
+  if (!m) return;
+  let zIndex = 0;
+  if (adminSet.has(id)) zIndex = 2000;
+  else if (policeSet.has(id)) zIndex = 1000;
+  m.setZIndexOffset(zIndex);
+}
+
+async function fetchRoles() {
+  if (!API_URL || !API_PASSWORD) return;
+  try {
+    // Derive api_base from API_URL which points to '<api_base>/player/list'
+    let apiBase = API_URL.split('?')[0].replace(/\/+$/,'');
+    // If API_URL ends with '/player/list' remove that suffix to get the real base
+    apiBase = apiBase.replace(/\/player\/list$/,'');
+    apiBase = apiBase.replace(/\/+$/,'');
+    // fetch admin list
+    const adminRes = await fetchWithProxy(`${apiBase}/player/role/list?role=admin&password=${encodeURIComponent(API_PASSWORD)}`);
+    const adminJson = await adminRes.json();
+    adminSet.clear();
+    if (adminJson && adminJson.data && adminJson.data.admin) {
+      for (const k in adminJson.data.admin) {
+        const u = adminJson.data.admin[k];
+        if (u && u.unique_id) adminSet.add(u.unique_id);
+      }
+    }
+    // fetch police list
+    const policeRes = await fetchWithProxy(`${apiBase}/player/role/list?role=police&password=${encodeURIComponent(API_PASSWORD)}`);
+    const policeJson = await policeRes.json();
+    policeSet.clear();
+    if (policeJson && policeJson.data && policeJson.data.police) {
+      for (const k in policeJson.data.police) {
+        const u = policeJson.data.police[k];
+        if (u && u.unique_id) policeSet.add(u.unique_id);
+      }
+    }
+    // Debug: report counts
+    console.log(`Roles fetched: admins=${adminSet.size} police=${policeSet.size}`);
+    // Update all existing markers' icons to reflect roles (admin priority above police)
+    for (const id in markers) {
+      updateMarkerRoleIcon(id);
+      updateMarkerZIndex(id);
+    }
+  } catch (err) {
+    console.warn('Role fetch failed:', err);
+  }
+}
+
+// Poll roles periodically
+setTimeout(fetchRoles, 2000);
+setInterval(fetchRoles, 15000);
+
+// Send a mute command to the game server Web API
+async function sendMute(uniqueId, hours = 0, reason = '') {
+  try {
+    if (!API_URL || !API_PASSWORD) throw new Error('API not configured');
+    let apiBase = API_URL.split('?')[0].replace(/\/+$|\/player\/list$/g, '');
+    apiBase = apiBase.replace(/\/+$/,'');
+    const params = new URLSearchParams();
+    params.set('password', API_PASSWORD);
+    params.set('unique_id', uniqueId);
+    if (hours !== undefined && hours !== null) params.set('hours', String(hours));
+    if (reason) params.set('reason', reason);
+    const target = `${apiBase}/player/mute?${params.toString()}`;
+    const res = await fetchWithProxy(target, { method: 'POST' });
+    let text = await res.text();
+    try { const j = JSON.parse(text); text = j.message || JSON.stringify(j); } catch(e) {}
+    alert(`Mute request result: ${text}`);
+  } catch (err) {
+    alert('Mute failed: ' + (err && err.message ? err.message : String(err)));
+  }
+}
 /**
  * Default checkpoint marker — cyan dot + white gate line, rotated to match waypoint direction.
  */
@@ -159,7 +267,197 @@ function makeCheckpointRotatingIcon(gx, gy) {
   return L.divIcon({ html, iconSize: [56,56], iconAnchor: [28,28], className: 'checkpoint-div-icon' });
 }
 const markers = {};
+let fireMarkers = {};
+let fireEnabled = false;
+const fireIcon = L.icon({
+  iconUrl: 'assets/Fire.png',
+  iconSize: [32, 32],
+  iconAnchor: [16, 16],
+  popupAnchor: [0, -16],
+  className: 'fire-marker-icon'
+});
+// House icon (use assets/house.png)
+const houseIcon = L.icon({
+  iconUrl: 'assets/house.png',
+  iconSize: [28, 28],
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -14],
+  className: 'house-marker-icon'
+});
+
+// Houses data structures
+// housesData: houseName -> { owner_unique_id, expire_time, x, y }
+let housesData = {};
+
+function parseExpireTimestamp(s) {
+  if (!s) return null;
+  const m = s.match(/(\d{4})\.(\d{2})\.(\d{2})-(\d{2})\.(\d{2})\.(\d{2})/);
+  if (!m) return null;
+  const year = Number(m[1]), month = Number(m[2]) - 1, day = Number(m[3]);
+  const hh = Number(m[4]), mm = Number(m[5]), ss = Number(m[6]);
+  return new Date(year, month, day, hh, mm, ss);
+}
+
+function formatTimeLeft(ms) {
+  if (ms <= 0) return 'Expired';
+  const sec = Math.floor(ms / 1000);
+  const days = Math.floor(sec / 86400);
+  const hours = Math.floor((sec % 86400) / 3600);
+  const mins = Math.floor((sec % 3600) / 60);
+  if (days > 0) return `${days}d ${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h ${mins}m`;
+  return `${mins}m`;
+}
+
+async function loadHouses() {
+  // Try common locations for a houses JSON file
+  const candidates = ['houses.json', 'data/houses.json', 'assets/houses.json'];
+  for (const c of candidates) {
+    try {
+      const res = await fetch(c);
+      if (!res.ok) continue;
+      const j = await res.json();
+      const raw = j.data || j;
+      housesData = {};
+      for (const hn in raw) {
+        const h = raw[hn];
+        if (!h) continue;
+        const owner = h.owner_unique_id ? String(h.owner_unique_id) : null;
+        // Accept coordinates in several common keys: x/y or world_x/world_y
+        let wx = null, wy = null;
+        if (typeof h.x === 'number' && typeof h.y === 'number') { wx = h.x; wy = h.y; }
+        else if (typeof h.world_x === 'number' && typeof h.world_y === 'number') { wx = h.world_x; wy = h.world_y; }
+        else if (typeof h.coords === 'string') {
+          const m = h.coords.match(/X=([\-0-9.]+)\s*,?\s*Y=([\-0-9.]+)/);
+          if (m) { wx = Number(m[1]); wy = Number(m[2]); }
+        }
+        housesData[hn] = { owner_unique_id: owner, expire_time: h.expire_time || null, x: wx, y: wy };
+      }
+      console.log('Houses loaded from', c);
+      return;
+    } catch (e) {
+      // ignore and try next
+    }
+  }
+  // If not found, leave housesData empty; developer can set via console
+  console.log('No houses.json found (looked in candidates).');
+}
+
+// Load once at startup
+setTimeout(loadHouses, 1000);
+
+// Sidebar button handler: open houses panel and render list
+const housesBtnEl = document.getElementById('sidebarHousesBtn');
+const housesPanelEl = document.getElementById('housesPanel');
+const housesListEl = document.getElementById('housesList');
+const housesCloseBtn = document.getElementById('housesCloseBtn');
+
+function renderHouseList() {
+  if (!housesListEl) return;
+  const keys = Object.keys(housesData || {});
+  if (keys.length === 0) { housesListEl.innerHTML = '<div style="color:#888">No houses loaded</div>'; return; }
+  // Sort alphabetically
+  keys.sort((a,b) => a.localeCompare(b));
+  housesListEl.innerHTML = '';
+  keys.forEach(hn => {
+    const h = housesData[hn];
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.justifyContent = 'space-between';
+    row.style.alignItems = 'center';
+    row.style.padding = '8px';
+    row.style.background = '#242424';
+    row.style.borderRadius = '6px';
+    row.style.borderLeft = '3px solid #00b1e0';
+    const nameDiv = document.createElement('div');
+    nameDiv.textContent = hn;
+    nameDiv.style.color = '#fff';
+    nameDiv.style.fontWeight = 'bold';
+    nameDiv.style.fontSize = '13px';
+    const expireDiv = document.createElement('div');
+    let expText = 'Unknown';
+    const parsed = parseExpireTimestamp(h.expire_time || '');
+    if (parsed) {
+      const msLeft = parsed.getTime() - Date.now();
+      expText = formatTimeLeft(msLeft);
+    } else if (h.expire_time) {
+      const m = String(h.expire_time).match(/\(([^)]+)\)/);
+      expText = m ? m[1] : String(h.expire_time);
+    }
+    expireDiv.textContent = expText;
+    expireDiv.style.color = '#ccc';
+    expireDiv.style.fontSize = '12px';
+    row.appendChild(nameDiv);
+    row.appendChild(expireDiv);
+    housesListEl.appendChild(row);
+  });
+}
+
+if (housesCloseBtn) {
+  housesCloseBtn.addEventListener('click', () => {
+    closeAllPanels();
+  });
+}
 let raceTrackMarkers = [];
+
+function setFireCount(count) {
+  const badge = document.getElementById('fireCountBadge');
+  if (!badge) return;
+  badge.textContent = `Fires: ${count}`;
+  badge.classList.toggle('hidden', !fireEnabled);
+}
+
+function clearFireMarkers() {
+  for (const id in fireMarkers) {
+    map.removeLayer(fireMarkers[id]);
+    delete fireMarkers[id];
+  }
+  setFireCount(0);
+}
+
+async function pollFires() {
+  if (!API_URL || !API_PASSWORD || !fireEnabled) return;
+  try {
+    let apiBase = API_URL.split('?')[0].replace(/\/+$/, '');
+    apiBase = apiBase.replace(/\/player\/list$/, '');
+    const target = `${apiBase}/fire/list?password=${encodeURIComponent(API_PASSWORD)}`;
+    const res = await fetchWithProxy(target);
+    const json = await res.json();
+    if (!json.succeeded || !json.data || !Array.isArray(json.data.fires)) {
+      setFireCount(0);
+      return;
+    }
+
+    const seen = new Set();
+    json.data.fires.forEach(fire => {
+      const id = String(fire.fire_id);
+      seen.add(id);
+      const loc = parseLocation(fire.location);
+      if (!loc) return;
+      const { mapX, mapY } = worldToMap(loc.x, loc.y);
+      const popupText = `Fire Radius: ${Number(fire.fire_radius).toFixed(1)}<br>Spotted: ${fire.spotted ? 'Yes' : 'No'}`;
+      if (!fireMarkers[id]) {
+        fireMarkers[id] = L.marker([mapY, mapX], { icon: fireIcon, riseOnHover: false })
+          .addTo(map)
+          .bindPopup(popupText, { closeButton: false, autoPan: false });
+      } else {
+        fireMarkers[id].setLatLng([mapY, mapX]);
+        fireMarkers[id].setPopupContent(popupText);
+      }
+    });
+
+    for (const id in fireMarkers) {
+      if (!seen.has(id)) {
+        map.removeLayer(fireMarkers[id]);
+        delete fireMarkers[id];
+      }
+    }
+
+    setFireCount(json.data.fires.length);
+  } catch (err) {
+    console.error('Fire API error:', err);
+  }
+}
 
 // ── Shared SVG renderer for all arrow/boundary vector layers ─────────────────
 const svgRenderer = L.svg({ padding: 5 });
@@ -200,9 +498,18 @@ let chatColors = Array.isArray(_rawColors)
 if (chatColors.length === 0) chatColors = ['FFFFFF', 'FF0000', '00FF00', '0000FF'];
 let selectedColor = chatColors[0];
 let chatUsername = localStorage.getItem('chatUsername') || '';
-let allPlayers = []; 
-let isVisible = true; 
-let pollInterval = null; 
+let allPlayers = [];
+let playerListMode = 'online';
+const offlinePlayers = {}; // { unique_id, name, offlineAt }
+const playerCache = {};
+let locationTrackingConfig = {
+  onlineMode: 'time_limit',
+  onlineMinutes: 60,
+  offlineMode: 'time_limit',
+  offlineMinutes: 60
+};
+let isVisible = true;
+let pollInterval = null;
 function parseLocation(loc) {
   const m = loc.match(/X=([-\d.]+)\sY=([-\d.]+)\sZ=([-\d.]+)/);
   if (!m) return null;
@@ -228,39 +535,65 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
-function updatePlayerList(playerArray) {
+function updatePlayerList(playerArray = null) {
   const listContainer = document.getElementById('playerList');
   const countBadge = document.getElementById('playerCount');
+  const titleEl = document.getElementById('playerListTitle');
   const searchInput = document.getElementById('playerSearch');
-  if (!listContainer || !countBadge) return;
-  allPlayers = playerArray;
+  if (!listContainer || !countBadge || !titleEl) return;
+  if (playerArray !== null) allPlayers = playerArray;
   const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
-  let filteredPlayers = playerArray;
+  const sourcePlayers = playerListMode === 'offline'
+    ? Object.values(offlinePlayers)
+    : allPlayers;
+
+  titleEl.textContent = playerListMode === 'offline' ? 'Offline Players' : 'Players Online';
+
+  let filteredPlayers = sourcePlayers;
   if (searchTerm) {
-    filteredPlayers = playerArray.filter(p => 
+    filteredPlayers = sourcePlayers.filter(p => 
       p.name.toLowerCase().includes(searchTerm) || 
       p.unique_id.toLowerCase().includes(searchTerm)
     );
   }
-  if (searchTerm && filteredPlayers.length !== playerArray.length) {
-    countBadge.textContent = `${filteredPlayers.length}/${playerArray.length}`;
+
+  if (searchTerm && filteredPlayers.length !== sourcePlayers.length) {
+    countBadge.textContent = `${filteredPlayers.length}/${sourcePlayers.length}`;
   } else {
-    countBadge.textContent = playerArray.length;
+    countBadge.textContent = sourcePlayers.length;
   }
-  filteredPlayers.sort((a, b) => a.name.localeCompare(b.name));
+
+  function roleRank(id) {
+    if (adminSet.has(id)) return 0;
+    if (policeSet.has(id)) return 1;
+    return 2;
+  }
+
+  filteredPlayers.sort((a, b) => {
+    const rankA = roleRank(a.unique_id);
+    const rankB = roleRank(b.unique_id);
+    if (rankA !== rankB) return rankA - rankB;
+    return a.name.localeCompare(b.name);
+  });
+
   listContainer.innerHTML = '';
   if (filteredPlayers.length === 0 && searchTerm) {
     listContainer.innerHTML = '<div style="padding:20px;text-align:center;color:#888;">No players found</div>';
     return;
   }
+
   filteredPlayers.forEach(player => {
     const item = document.createElement('div');
-    item.className = 'player-item';
+    item.className = 'player-item' + (playerListMode === 'offline' ? ' offline' : '');
+    const isOffline = playerListMode === 'offline';
+    const vehicleText = player.vehicle && player.vehicle.name ? ` (${escapeHtml(player.vehicle.name)})` : '';
     item.innerHTML = `
-      <div class="player-name">${escapeHtml(player.name)}</div>
+      <div class="player-name">${escapeHtml(player.name)}${vehicleText}</div>
       <div class="player-id">ID: ${escapeHtml(player.unique_id)}</div>
+      ${isOffline ? '<div class="player-actions"><button class="offline-remove-btn">Remove</button></div>' : '<div class="player-actions"><button class="mute-btn">Mute</button></div>'}
     `;
-    item.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+      if (e.target.classList.contains('offline-remove-btn')) return;
       if (trackedPlayerId === player.unique_id) { closeTracker(); return; }
       if (markers[player.unique_id]) {
         const marker = markers[player.unique_id];
@@ -269,10 +602,95 @@ function updatePlayerList(playerArray) {
       }
       openTracker(player.unique_id, player.name);
     });
+    if (isOffline) {
+      const removeBtn = item.querySelector('.offline-remove-btn');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          removeOfflinePlayer(player.unique_id);
+        });
+      }
+    } else {
+      const muteBtn = item.querySelector('.mute-btn');
+      if (muteBtn) {
+        muteBtn.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (!API_URL || !API_PASSWORD) { alert('API not configured'); return; }
+          const hoursStr = prompt('Mute hours (0 = permanent):', '0');
+          if (hoursStr === null) return; // cancelled
+          const hours = Number(hoursStr);
+          if (isNaN(hours) || hours < 0) { alert('Invalid hours'); return; }
+          const reason = prompt('Reason (optional):', '');
+          sendMute(player.unique_id, hours, reason || '');
+        });
+      }
+    }
     if (player.unique_id === trackedPlayerId) item.classList.add('tracked');
     listContainer.appendChild(item);
   });
 }
+
+function setPlayerListMode(mode) {
+  if (mode !== 'online' && mode !== 'offline') return;
+  playerListMode = mode;
+  document.querySelectorAll('.player-list-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-list') === mode);
+  });
+  updatePlayerList();
+}
+
+function markPlayerOffline(id) {
+  const name = (playerCache[id] && playerCache[id].name) || id;
+  offlinePlayers[id] = {
+    unique_id: id,
+    name,
+    offlineAt: Date.now()
+  };
+  removeMarkerSmooth(id);
+  if (markers[id]) {
+    map.removeLayer(markers[id]);
+    delete markers[id];
+  }
+}
+
+function removeOfflinePlayer(id) {
+  delete offlinePlayers[id];
+  delete locationHistory[id];
+  if (trackedPlayerId === id) closeTracker();
+  updatePlayerList();
+}
+
+function pruneOfflinePlayers() {
+  if (locationTrackingConfig.offlineMode !== 'time_limit') return;
+  const expiry = Date.now() - (locationTrackingConfig.offlineMinutes * 60 * 1000);
+  for (const id in offlinePlayers) {
+    if (offlinePlayers[id].offlineAt < expiry) {
+      delete offlinePlayers[id];
+      delete locationHistory[id];
+      if (trackedPlayerId === id) closeTracker();
+    }
+  }
+}
+
+function applyLocationTrackingConfig(cfg) {
+  locationTrackingConfig = {
+    onlineMode: cfg.onlineMode || locationTrackingConfig.onlineMode,
+    onlineMinutes: Number(cfg.onlineMinutes) || locationTrackingConfig.onlineMinutes,
+    offlineMode: cfg.offlineMode || locationTrackingConfig.offlineMode,
+    offlineMinutes: Number(cfg.offlineMinutes) || locationTrackingConfig.offlineMinutes
+  };
+  LOC_HISTORY_MS = locationTrackingConfig.onlineMode === 'session'
+    ? Infinity
+    : locationTrackingConfig.onlineMinutes * 60 * 1000;
+}
+
+function updateLocationTrackingUI() {
+  const onlineMode = document.querySelector('input[name="onlineTrackingMode"]:checked')?.value || locationTrackingConfig.onlineMode;
+  const offlineMode = document.querySelector('input[name="offlineTrackingMode"]:checked')?.value || locationTrackingConfig.offlineMode;
+  document.getElementById('onlineTrackingLimitRow').style.display = onlineMode === 'time_limit' ? '' : 'none';
+  document.getElementById('offlineTrackingLimitRow').style.display = offlineMode === 'time_limit' ? '' : 'none';
+}
+
 // ── Smooth marker movement — velocity integration + drift correction ──────────
 // Primary: position += velocity * dt  (no position snapping)
 // Correction: a tiny fraction of position error is added each frame to prevent
@@ -380,7 +798,7 @@ function removeMarkerSmooth(id) {
 }
 
 // ── Location History Tracker ──────────────────────────────────────────────────
-const LOC_HISTORY_MS   = 30 * 60 * 1000; // 30 minutes
+let LOC_HISTORY_MS   = 60 * 60 * 1000; // 60 minutes (1 hour)
 const LOC_MIN_DIST     = 5;              // only record if moved > 5 world units
 const locationHistory  = {};             // { unique_id: [{x, y, z, ts}] }
 let   trackedPlayerId  = null;
@@ -423,6 +841,8 @@ function openTracker(id, name) {
   trackedPlayerId = id;
   document.getElementById('locTrackerName').textContent = `📍 ${name}`;
   document.getElementById('locTrackerPanel').classList.add('open');
+  // Expand maxBounds to allow panning into the tracker panel area
+  map.setMaxBounds([[-200, -200], [MAP.height + 200, MAP.width + 400]]);
   renderTrackerPanel();
   drawTrackerPolyline();
 }
@@ -430,6 +850,8 @@ function openTracker(id, name) {
 function closeTracker() {
   trackedPlayerId = null;
   document.getElementById('locTrackerPanel').classList.remove('open');
+  // Restore normal maxBounds
+  map.setMaxBounds([[-200, -200], [MAP.height + 200, MAP.width + 200]]);
   if (trackedPolyline) { map.removeLayer(trackedPolyline); trackedPolyline = null; }
   trackedDots.forEach(d => map.removeLayer(d)); trackedDots = [];
   document.querySelectorAll('.player-item.tracked').forEach(el => el.classList.remove('tracked'));
@@ -620,6 +1042,31 @@ document.getElementById('sidebarHeatmapBtn').addEventListener('click', () => {
   if (!isOpen) {
     panel.classList.add('open');
     document.getElementById('sidebarHeatmapBtn').classList.add('active');
+    document.body.classList.add('heatmap-panel-open');
+  }
+});
+
+document.getElementById('sidebarHousesBtn').addEventListener('click', () => {
+  const panel = document.getElementById('housesPanel');
+  const isOpen = panel.classList.contains('open');
+  closeAllPanels();
+  if (!isOpen) {
+    panel.classList.add('open');
+    document.getElementById('sidebarHousesBtn').classList.add('active');
+    document.body.classList.add('houses-panel-open');
+    if (Object.keys(housesData).length === 0) {
+      loadHouses().then(() => renderHouseList());
+    } else renderHouseList();
+  }
+});
+
+document.getElementById('sidebarFiresBtn').addEventListener('click', () => {
+  fireEnabled = !fireEnabled;
+  document.getElementById('sidebarFiresBtn').classList.toggle('active', fireEnabled);
+  if (fireEnabled) {
+    pollFires();
+  } else {
+    clearFireMarkers();
   }
 });
 
@@ -644,7 +1091,7 @@ let lastChatStatus = '';
 let pendingUpdate = false;
 async function pollPlayers() {
   if (!API_URL || !API_PASSWORD) return;
-  if (!isVisible || pendingUpdate) return;
+  if (pendingUpdate) return;  // Continue polling even when window is hidden
   pendingUpdate = true;
   try {
     const target = `${API_URL}?password=${encodeURIComponent(API_PASSWORD)}`;
@@ -659,6 +1106,8 @@ async function pollPlayers() {
     for (const key in players) {
       const p = players[key];
       seen.add(p.unique_id);
+      playerCache[p.unique_id] = p;
+      delete offlinePlayers[p.unique_id];
       playerArray.push(p);
       const loc = parseLocation(p.location);
       if (!loc) continue;
@@ -670,9 +1119,11 @@ async function pollPlayers() {
       recordHeatPoint(loc.x, loc.y);
 
       if (!markers[p.unique_id]) {
-        markers[p.unique_id] = L.marker([mapY, mapX], { icon: defaultIcon, riseOnHover: false })
+        const vehicleDisplay = p.vehicle && p.vehicle.name ? `<div>${escapeHtml(p.vehicle.name)}</div>` : '';
+        const popupContent = `${vehicleDisplay}<strong>${escapeHtml(p.name)}</strong>`;
+        markers[p.unique_id] = L.marker([mapY, mapX], { icon: iconForPlayer(p.unique_id), riseOnHover: false })
           .addTo(map)
-          .bindPopup(`<strong>${escapeHtml(p.name)}</strong>`, { closeButton: false, autoPan: false });
+          .bindPopup(popupContent, { closeButton: false, autoPan: false });
         // Click marker to open tracker
         markers[p.unique_id].on('click', () => {
           if (trackedPlayerId === p.unique_id) { closeTracker(); return; }
@@ -685,18 +1136,26 @@ async function pollPlayers() {
         }
       }
       setMarkerTarget(p.unique_id, mapY, mapX);
+      // Ensure icon reflects current role (in case roles changed between polls)
+      updateMarkerRoleIcon(p.unique_id);
+      updateMarkerZIndex(p.unique_id);
+      // Update popup with current vehicle info
+      const vehicleDisplay = p.vehicle && p.vehicle.name ? `<div>${escapeHtml(p.vehicle.name)}</div>` : '';
+      const popupContent = `${vehicleDisplay}<strong>${escapeHtml(p.name)}</strong>`;
+      markers[p.unique_id].setPopupContent(popupContent);
+
     }
 
     for (const id in markers) {
       if (!seen.has(id)) {
-        removeMarkerSmooth(id);
-        map.removeLayer(markers[id]);
-        delete markers[id];
-        if (trackedPlayerId === id) closeTracker();
+        markPlayerOffline(id);
       }
     }
 
+    pruneOfflinePlayers();
     updatePlayerList(playerArray);
+
+    // House markers are independent; no owner-based cleanup here
 
     // Refresh tracker panel and polyline if open
     if (trackedPlayerId) {
@@ -704,6 +1163,7 @@ async function pollPlayers() {
       drawTrackerPolyline();
     }
 
+    if (fireEnabled) await pollFires();
     pendingUpdate = false;
   } catch (err) {
     console.error("API error:", err);
@@ -1112,7 +1572,17 @@ function getCurrentConfig() {
     const stored = localStorage.getItem('mtconfig');
     if (stored) return JSON.parse(stored);
   } catch(e) {}
-  return { api_base: '', chat_history_url: '', api_password: '' };
+  return {
+    api_base: '',
+    chat_history_url: '',
+    api_password: '',
+    locationTracking: {
+      onlineMode: 'time_limit',
+      onlineMinutes: 60,
+      offlineMode: 'time_limit',
+      offlineMinutes: 60
+    }
+  };
 }
 
 function loadConfigFromStorage() {
@@ -1126,6 +1596,9 @@ function loadConfigFromStorage() {
       }
       if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
       if (config.api_password) API_PASSWORD = config.api_password;
+      if (config.locationTracking) {
+        applyLocationTrackingConfig(config.locationTracking);
+      }
       // Set access level based on config source
       if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
       else if (config.config_source === 'manual') ALLOW_ALL = true;
@@ -1163,6 +1636,17 @@ function populateManualFields() {
   document.getElementById('togglePassword').textContent = 'Show';
   document.getElementById('toggleBaseUrl').textContent = 'Show';
   document.getElementById('toggleChatUrl').textContent = 'Show';
+
+  const tracking = currentCfg.locationTracking || locationTrackingConfig;
+  document.querySelectorAll('input[name="onlineTrackingMode"]').forEach(input => {
+    input.checked = input.value === (tracking.onlineMode || 'time_limit');
+  });
+  document.querySelectorAll('input[name="offlineTrackingMode"]').forEach(input => {
+    input.checked = input.value === (tracking.offlineMode || 'time_limit');
+  });
+  document.getElementById('onlineTrackingMinutes').value = tracking.onlineMinutes || 60;
+  document.getElementById('offlineTrackingMinutes').value = tracking.offlineMinutes || 60;
+  updateLocationTrackingUI();
 }
 
 settingsBtn.addEventListener('click', () => {
@@ -1171,6 +1655,22 @@ settingsBtn.addEventListener('click', () => {
   const canExport = getCurrentConfig().config_source !== 'encrypted';
   document.getElementById('exportConfigSection').style.display = canExport ? '' : 'none';
   settingsModal.classList.add('active');
+});
+
+['onlineTrackingMode', 'offlineTrackingMode'].forEach(name => {
+  document.querySelectorAll(`input[name="${name}"]`).forEach(input => {
+    input.addEventListener('change', updateLocationTrackingUI);
+  });
+});
+
+document.querySelectorAll('.player-list-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    setPlayerListMode(btn.getAttribute('data-list'));
+  });
+});
+
+document.getElementById('playerSearch')?.addEventListener('input', () => {
+  updatePlayerList();
 });
 
 closeSettingsBtn.addEventListener('click', () => {
@@ -1248,7 +1748,7 @@ function isValidHttpUrl(str) {
   } catch(_) { return false; }
 }
 
-document.getElementById('saveConfigBtn').addEventListener('click', () => {
+function saveManualConfig() {
   const config = {
     api_base: document.getElementById('apiBaseUrl').value.trim(),
     chat_history_url: document.getElementById('chatHistoryUrl').value.trim(),
@@ -1256,7 +1756,6 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
     config_source: 'manual',
     allow_all: true
   };
-
 
   if (!config.api_base || !config.api_password) {
     alert('API Base URL and Password are required');
@@ -1273,19 +1772,36 @@ document.getElementById('saveConfigBtn').addEventListener('click', () => {
     return;
   }
   
-  saveConfigToStorage(config);
+  const locationTracking = {
+    onlineMode: document.querySelector('input[name="onlineTrackingMode"]:checked')?.value || locationTrackingConfig.onlineMode,
+    onlineMinutes: Number(document.getElementById('onlineTrackingMinutes').value) || locationTrackingConfig.onlineMinutes,
+    offlineMode: document.querySelector('input[name="offlineTrackingMode"]:checked')?.value || locationTrackingConfig.offlineMode,
+    offlineMinutes: Number(document.getElementById('offlineTrackingMinutes').value) || locationTrackingConfig.offlineMinutes
+  };
+
+  saveConfigToStorage({
+    ...config,
+    locationTracking
+  });
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
   ALLOW_ALL = true;
+  applyLocationTrackingConfig(locationTracking);
 
   settingsModal.classList.remove('active');
   restartPolling();
   alert('Configuration saved!');
-});
+}
+
+document.getElementById('saveConfigBtn').addEventListener('click', saveManualConfig);
+document.getElementById('saveLocationTrackingBtn').addEventListener('click', saveManualConfig);
 
 document.getElementById('cancelConfigBtn').addEventListener('click', () => {
+  settingsModal.classList.remove('active');
+});
+document.getElementById('cancelLocationTrackingBtn').addEventListener('click', () => {
   settingsModal.classList.remove('active');
 });
 
@@ -1326,12 +1842,19 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
     return;
   }
   
-  saveConfigToStorage({ ...config, config_source: 'encrypted' });
+  saveConfigToStorage({
+    ...config,
+    config_source: 'encrypted',
+    locationTracking: config.locationTracking || locationTrackingConfig
+  });
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
   ALLOW_ALL = !!config.allow_all;
+  if (config.locationTracking) {
+    applyLocationTrackingConfig(config.locationTracking);
+  }
   
   settingsModal.classList.remove('active');
   restartPolling();
@@ -2340,9 +2863,13 @@ function closeAllPanels() {
   document.getElementById('sidebarPlayersBtn').classList.remove('active');
   document.getElementById('sidebarRacesMgrBtn').classList.remove('active');
   document.body.classList.remove('players-panel-open', 'races-panel-open');
+  document.body.classList.remove('heatmap-panel-open');
   // Also close heatmap panel
   document.getElementById('heatmapPanel').classList.remove('open');
   document.getElementById('sidebarHeatmapBtn').classList.remove('active');
+  document.getElementById('housesPanel').classList.remove('open');
+  document.getElementById('sidebarHousesBtn').classList.remove('active');
+  document.body.classList.remove('houses-panel-open');
   setHeatmapMode(null);
 }
 
