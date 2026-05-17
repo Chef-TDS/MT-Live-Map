@@ -142,6 +142,47 @@
       font-weight: bold;
     }
 
+    .player-list-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 8px 10px;
+      background: #111;
+      border-bottom: 1px solid #222;
+    }
+
+    .player-list-tab {
+      flex: 1;
+      padding: 8px 10px;
+      background: #141414;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #ccc;
+      font-size: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .player-list-tab.active,
+    .player-list-tab:hover {
+      background: #00b1e0;
+      border-color: #00b1e0;
+      color: #000;
+    }
+
+    .player-item.offline { border-left-color: #888; }
+    .player-actions { margin-top: 6px; display: flex; justify-content: flex-end; }
+    .player-actions button {
+      background: #333;
+      color: #fff;
+      border: none;
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .player-actions button:hover { background: #444; }
+
     .player-list-content {
       flex: 1;
       overflow-y: auto;
@@ -177,7 +218,9 @@
     /* ── Location Tracker Panel ─────────────────────────────────── */
     .loc-tracker-panel {
       position: fixed;
-      left: 304px; /* 54px sidebar + 250px player list */
+      /* default: sit just to the right of the left icon sidebar (54px)
+         but move when different left panels are open via body classes */
+      left: 54px;
       top: 0;
       bottom: 0;
       width: 260px;
@@ -190,6 +233,26 @@
       z-index: 99;
     }
     .loc-tracker-panel.open { display: flex; }
+
+    /* When the player list panel is open, position tracker to its right */
+    body.players-panel-open .loc-tracker-panel {
+      left: 304px; /* 54px sidebar + 250px player list */
+    }
+
+    /* When the races/checkpoint manager is open (wider), position tracker further right */
+    body.races-panel-open .loc-tracker-panel {
+      left: 334px; /* 54px sidebar + ~280px races panel + spacing */
+    }
+
+    /* When the heatmap (left) panel is open, position tracker to its right */
+    body.heatmap-panel-open .loc-tracker-panel {
+      left: 282px; /* 54 + 220 + 8 */
+    }
+
+    /* When the houses panel is open, position tracker to its right */
+    body.houses-panel-open .loc-tracker-panel {
+      left: 282px; /* 54 + 220 + 8 */
+    }
 
     .loc-tracker-header {
       background: #0d0d0d;
@@ -305,6 +368,44 @@
     }
     .heatmap-header span { color: #ff6600; }
     .heatmap-body { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .houses-panel {
+      position: fixed;
+      left: 54px;
+      top: 0;
+      bottom: 0;
+      width: 220px;
+      background: #1a1a1a;
+      border-right: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 100;
+    }
+    .houses-panel.open { display: flex; }
+    .houses-header {
+      background: #0d0d0d;
+      padding: 13px 15px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .houses-title { color: #00b1e0; }
+    .houses-body { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .houses-close-btn {
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .houses-close-btn:hover { background: #33d4ff; }
     .heatmap-mode-btn {
       width: 100%;
       padding: 10px 12px;
@@ -754,6 +855,11 @@
     body.races-panel-open .leaflet-bottom.leaflet-left {
       left: 334px !important; /* 54 + 272 + 8 */
     }
+    body.houses-panel-open .leaflet-bottom.leaflet-left {
+      left: 282px !important; /* 54 + 220 + 8 */
+    }
+
+
 
     .checkpoint-div-icon {
       background: none !important;
@@ -774,6 +880,29 @@
 
     .coord-display strong {
       color: #00b1e0;
+    }
+
+    .fire-count-badge {
+      position: absolute;
+      right: 18px;
+      bottom: 18px;
+      z-index: 1100;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid #ff6600;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      white-space: nowrap;
+      transition: right 0.15s ease;
+    }
+    .fire-count-badge.hidden {
+      display: none;
+    }
+    body.players-panel-open .fire-count-badge,
+    body.races-panel-open .fire-count-badge,
+    body.houses-panel-open .fire-count-badge {
+      right: 314px;
     }
 
     
@@ -1681,6 +1810,14 @@
       🔥
       <span class="sidebar-tooltip">Heatmap</span>
     </button>
+    <button class="sidebar-icon-btn" id="sidebarHousesBtn" title="Show houses">
+      🏠
+      <span class="sidebar-tooltip">Houses</span>
+    </button>
+    <button class="sidebar-icon-btn" id="sidebarFiresBtn" title="Toggle fire markers">
+      🧯
+      <span class="sidebar-tooltip">Show Fires</span>
+    </button>
     <div class="sidebar-divider"></div>
     <button class="sidebar-icon-btn active" id="togglePlayerIconsBtn" title="Toggle player icons">
       👤
@@ -1699,11 +1836,26 @@
     </div>
   </div>
 
+  <!-- Houses Panel -->
+  <div class="houses-panel" id="housesPanel">
+    <div class="houses-header">
+      <span class="houses-title">Houses</span>
+      <button class="houses-close-btn" id="housesCloseBtn">Close</button>
+    </div>
+    <div class="houses-body" id="housesBody">
+      <div id="housesList" style="display:flex;flex-direction:column;gap:8px;">Loading…</div>
+    </div>
+  </div>
+
   <!-- Player List Sidebar -->
   <div class="player-list-sidebar" id="playerListSidebar">
     <div class="player-list-header">
-      <span>Players Online</span>
+      <span id="playerListTitle">Players Online</span>
       <span class="player-count" id="playerCount">0</span>
+    </div>
+    <div class="player-list-tabs">
+      <button class="player-list-tab active" data-list="online">Online</button>
+      <button class="player-list-tab" data-list="offline">Offline</button>
     </div>
     <div class="player-search-area">
       <input type="text" id="playerSearch" placeholder="Search players..." />
@@ -1720,7 +1872,7 @@
     <div class="loc-tracker-body" id="locTrackerBody">
       <div class="loc-tracker-empty">No location data yet.</div>
     </div>
-    <div class="loc-tracker-footer">Last 30 minutes · updates every second</div>
+    <div class="loc-tracker-footer">Last hour · updates every second</div>
   </div>
 
   <!-- Heatmap Panel -->
@@ -1765,6 +1917,7 @@
   </div>
 
   <div id="map"></div>
+  <div id="fireCountBadge" class="fire-count-badge hidden">Fires: 0</div>
 
   <!-- Chat Sidebar -->
   <div class="chat-sidebar" id="chatSidebar">
@@ -1864,6 +2017,7 @@
         <button class="modal-tab active" data-tab="manual">Manual API Config</button>
         <button class="modal-tab" data-tab="encrypted">Encrypted Config</button>
         <button class="modal-tab" data-tab="racetrack">Race Track</button>
+        <button class="modal-tab" data-tab="locationtracking">Location Tracking</button>
         <button class="modal-tab" data-tab="keybinds">Keybinds</button>
       </div>
 
@@ -1917,6 +2071,50 @@
         </div>
       </div>
 
+      <div class="tab-content" id="locationtracking-tab">
+        <div class="info-text">Configure how long online and offline player location tracking is stored.</div>
+        <div class="settings-section">
+          <label>Online tracking</label>
+          <label style="display:inline-flex;align-items:center;gap:8px;margin-top:8px;white-space:nowrap;">
+            <span>Until app is closed</span>
+            <input type="radio" name="onlineTrackingMode" value="session" />
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:8px;margin-top:8px;white-space:nowrap;">
+            <span>Time limit</span>
+            <input type="radio" name="onlineTrackingMode" value="time_limit" />
+          </label>
+          <div class="settings-subsection" id="onlineTrackingLimitRow" style="margin-top:10px;">
+            <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              Keep location history for
+              <input type="number" id="onlineTrackingMinutes" min="1" value="60" style="width:80px;" />
+              minutes
+            </label>
+          </div>
+        </div>
+        <div class="settings-section">
+          <label>Offline tracking</label>
+          <label style="display:inline-flex;align-items:center;gap:8px;margin-top:8px;white-space:nowrap;">
+            <span>Until app is closed</span>
+            <input type="radio" name="offlineTrackingMode" value="session" />
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:8px;margin-top:8px;white-space:nowrap;">
+            <span>Time limit</span>
+            <input type="radio" name="offlineTrackingMode" value="time_limit" />
+          </label>
+          <div class="settings-subsection" id="offlineTrackingLimitRow" style="margin-top:10px;">
+            <label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              Keep offline entries for
+              <input type="number" id="offlineTrackingMinutes" min="1" value="60" style="width:80px;" />
+              minutes
+            </label>
+          </div>
+        </div>
+        <div class="modal-buttons">
+          <button class="modal-btn modal-btn-primary" id="saveLocationTrackingBtn">Save Config</button>
+          <button class="modal-btn modal-btn-secondary" id="cancelLocationTrackingBtn">Cancel</button>
+        </div>
+      </div>
+
       <div class="tab-content" id="racetrack-tab">
         <div class="info-text">Currentrace. Use the <strong style="color:#00b1e0">Import</strong> / <strong style="color:#00b1e0">Export</strong> on the map to well... import and export a race.</div>
         <div class="settings-section">
@@ -1958,7 +2156,7 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-  <script src="renderer.js?v=14"></script>
+  <script src="renderer.js"></script>
 
 </body>
 </html>
