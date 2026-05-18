@@ -3,7 +3,6 @@ let API_URL = "";
 let CHAT_API_URL = "";
 let CHAT_HISTORY_URL = "";
 // true = full access; false = players-on-map only (no chat, no location history)
-// Manual config always grants full access. Encrypted config requires allow_all flag.
 let ALLOW_ALL = false;
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
 
@@ -13,6 +12,17 @@ const CORS_PROXY = IS_ELECTRON ? '' : 'https://stupid-map.vandeveldepieter-be.wo
 async function fetchWithProxy(url, options = {}) {
   if (IS_ELECTRON) return fetch(url, options);
   return fetch(CORS_PROXY + encodeURIComponent(url), options);
+}
+
+function setApiConfig(config) {
+  if (config.api_base) {
+    API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
+    CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
+  }
+  if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+  if (config.api_password) API_PASSWORD = config.api_password;
+  if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
+  else ALLOW_ALL = true;
 }
 
 // Load saved config immediately so it overrides the defaults above
@@ -27,7 +37,9 @@ async function fetchWithProxy(url, options = {}) {
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
-    // Manual config always full access; encrypted config respects allow_all flag
+    if (config.locationTracking) {
+      applyLocationTrackingConfig(config.locationTracking);
+    }
     if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
     else ALLOW_ALL = true;
   } catch(e) {}
@@ -195,19 +207,29 @@ async function fetchRoles() {
 setTimeout(fetchRoles, 2000);
 setInterval(fetchRoles, 15000);
 
+function canMute() {
+  const config = getCurrentConfig();
+  if (config.config_source === 'encrypted') {
+    return !!config.allow_all;
+  }
+  return true;
+}
+
 // Send a mute command to the game server Web API
 async function sendMute(uniqueId, hours = 0, reason = '') {
   try {
+    if (!canMute()) throw new Error('Mute is only available for encrypted config with allow_all enabled.');
     if (!API_URL || !API_PASSWORD) throw new Error('API not configured');
     let apiBase = API_URL.split('?')[0].replace(/\/+$|\/player\/list$/g, '');
     apiBase = apiBase.replace(/\/+$/,'');
     const params = new URLSearchParams();
-    params.set('password', API_PASSWORD);
     params.set('unique_id', uniqueId);
     if (hours !== undefined && hours !== null) params.set('hours', String(hours));
     if (reason) params.set('reason', reason);
-    const target = `${apiBase}/player/mute?${params.toString()}`;
-    const res = await fetchWithProxy(target, { method: 'POST' });
+    const target = `${apiBase}/player/mute`;
+    const res = await fetchWithProxy(`${target}?${params.toString()}&password=${encodeURIComponent(API_PASSWORD)}`, {
+      method: 'POST'
+    });
     let text = await res.text();
     try { const j = JSON.parse(text); text = j.message || JSON.stringify(j); } catch(e) {}
     alert(`Mute request result: ${text}`);
@@ -287,6 +309,36 @@ const houseIcon = L.icon({
 
 // Houses data structures
 // housesData: houseName -> { owner_unique_id, expire_time, x, y }
+const HOUSE_NAME_MAP = {
+  "Gujwa_ContainerHouse": "Gujwa East",
+  "CheonJin_02": "Yeongil South",
+  "Downtown_01": "Jeju North",
+  "Downtown_02": "Jeju South",
+  "SeoGuiPo_WestTown_01": "Gangjung West",
+  "SungSan_01": "Seongsan",
+  "JoCheon_01": "Jocheon Old Mansion",
+  "PyoSun_01": "Pyosun",
+  "SinChang_01": "Sinchang",
+  "Hallim_01": "Hallim",
+  "Aewol_01": "Aewol",
+  "Gapa_01": "Gapa North",
+  "Daejin_01": "Steel Mill East",
+  "GwangjinTown_01": "Gwangjin North",
+  "GwangjinTown_02": "Gwangjin South",
+  "Sanho_02": "Sanho West",
+  "Dongsan_01": "Dongsan Quarry",
+  "Biyang_02": "Biyang West",
+  "Gaon_01": "Terry East",
+  "Biyang_01": "Biyang East",
+  "Gwangjin_01": "Gwangjin Storage East",
+  "Obo_02": "West Coastal North West",
+  "Obo_01": "West Coastal South West",
+  "Baram_01": "West Coastal East",
+  "Gwangjin_02": "Dragstrip North",
+  "Oedo_01": "Oedo",
+  "FirstHouse": "Starter house"
+};
+
 let housesData = {};
 
 function parseExpireTimestamp(s) {
@@ -350,7 +402,18 @@ setTimeout(loadHouses, 1000);
 const housesBtnEl = document.getElementById('sidebarHousesBtn');
 const housesPanelEl = document.getElementById('housesPanel');
 const housesListEl = document.getElementById('housesList');
-const housesCloseBtn = document.getElementById('housesCloseBtn');
+const townsBtnEl = document.getElementById('sidebarTownStatusBtn');
+const townsPanelEl = document.getElementById('townsPanel');
+const townsListEl = document.getElementById('townsList');
+const sidebarExpandBtn = document.getElementById('sidebarExpandBtn');
+const leftSidebarEl = document.getElementById('left-icon-sidebar');
+
+if (sidebarExpandBtn && leftSidebarEl) {
+  sidebarExpandBtn.addEventListener('click', () => {
+    const expanded = leftSidebarEl.classList.toggle('expanded');
+    document.body.classList.toggle('sidebar-expanded', expanded);
+  });
+}
 
 function renderHouseList() {
   if (!housesListEl) return;
@@ -370,7 +433,7 @@ function renderHouseList() {
     row.style.borderRadius = '6px';
     row.style.borderLeft = '3px solid #00b1e0';
     const nameDiv = document.createElement('div');
-    nameDiv.textContent = hn;
+    nameDiv.textContent = HOUSE_NAME_MAP[hn] || hn;
     nameDiv.style.color = '#fff';
     nameDiv.style.fontWeight = 'bold';
     nameDiv.style.fontSize = '13px';
@@ -393,12 +456,76 @@ function renderHouseList() {
   });
 }
 
-if (housesCloseBtn) {
-  housesCloseBtn.addEventListener('click', () => {
-    closeAllPanels();
+async function loadTownStatus() {
+  if (!API_URL) {
+    renderTownStatusList({ towns: [] }, 'API not configured');
+    return;
+  }
+  let apiBase = API_URL.split('?')[0].replace(/\/+$|\/player\/list$/g, '');
+  apiBase = apiBase.replace(/\/+$/,'');
+  const url = `${apiBase}/town/list`;
+  try {
+    const res = await fetchWithProxy(`${url}?password=${encodeURIComponent(API_PASSWORD)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    if (!json || !json.data || !Array.isArray(json.data.towns)) {
+      renderTownStatusList({ towns: [] }, 'No town data available');
+      return;
+    }
+    renderTownStatusList(json.data, null);
+  } catch (err) {
+    renderTownStatusList({ towns: [] }, `Load failed: ${err.message}`);
+  }
+}
+
+function renderTownStatusList(data, errorMessage) {
+  if (!townsListEl) return;
+  if (errorMessage) {
+    townsListEl.innerHTML = `<div style="color:#ff8c00;padding:12px">${errorMessage}</div>`;
+    return;
+  }
+  const towns = Array.isArray(data.towns) ? data.towns : [];
+  if (towns.length === 0) {
+    townsListEl.innerHTML = '<div style="color:#888;padding:12px">No towns found</div>';
+    return;
+  }
+  townsListEl.innerHTML = '';
+  towns.forEach(town => {
+    const row = document.createElement('div');
+    row.style.display = 'flex';
+    row.style.flexDirection = 'column';
+    row.style.padding = '10px';
+    row.style.background = '#242424';
+    row.style.borderRadius = '8px';
+    row.style.borderLeft = '3px solid #00b1e0';
+    const title = document.createElement('div');
+    title.textContent = town.name || 'Unknown';
+    title.style.color = '#fff';
+    title.style.fontWeight = 'bold';
+    title.style.fontSize = '13px';
+    const badgeRow = document.createElement('div');
+    badgeRow.style.display = 'flex';
+    badgeRow.style.flexDirection = 'column';
+    badgeRow.style.gap = '6px';
+    const buildBadge = (label, value, color) => {
+      const badge = document.createElement('span');
+      badge.textContent = `${label}: ${value || '0.00%'}`;
+      badge.style.fontSize = '11px';
+      badge.style.padding = '4px 7px';
+      badge.style.borderRadius = '999px';
+      badge.style.background = color;
+      badge.style.color = '#000';
+      badge.style.fontWeight = '700';
+      return badge;
+    };
+    badgeRow.appendChild(buildBadge('Pop', town.population_bonus, '#00b1e0'));
+    badgeRow.appendChild(buildBadge('Prod', town.production_bonus, '#33d4ff'));
+    badgeRow.appendChild(buildBadge('Pay', town.payment_bonus, '#ffa500'));
+    row.appendChild(title);
+    row.appendChild(badgeRow);
+    townsListEl.appendChild(row);
   });
 }
-let raceTrackMarkers = [];
 
 function setFireCount(count) {
   const badge = document.getElementById('fireCountBadge');
@@ -420,8 +547,8 @@ async function pollFires() {
   try {
     let apiBase = API_URL.split('?')[0].replace(/\/+$/, '');
     apiBase = apiBase.replace(/\/player\/list$/, '');
-    const target = `${apiBase}/fire/list?password=${encodeURIComponent(API_PASSWORD)}`;
-    const res = await fetchWithProxy(target);
+    const target = `${apiBase}/fire/list`;
+    const res = await fetchWithProxy(`${target}?password=${encodeURIComponent(API_PASSWORD)}`);
     const json = await res.json();
     if (!json.succeeded || !json.data || !Array.isArray(json.data.fires)) {
       setFireCount(0);
@@ -612,9 +739,20 @@ function updatePlayerList(playerArray = null) {
       }
     } else {
       const muteBtn = item.querySelector('.mute-btn');
+      const muteAllowed = canMute();
       if (muteBtn) {
+        if (!muteAllowed) {
+          muteBtn.disabled = true;
+          muteBtn.title = 'Mute requires encrypted config with allow_all enabled';
+          muteBtn.style.opacity = '0.55';
+          muteBtn.style.cursor = 'not-allowed';
+        }
         muteBtn.addEventListener('click', (ev) => {
           ev.stopPropagation();
+          if (!muteAllowed) {
+            alert('Mute is only available for encrypted config with allow_all enabled.');
+            return;
+          }
           if (!API_URL || !API_PASSWORD) { alert('API not configured'); return; }
           const hoursStr = prompt('Mute hours (0 = permanent):', '0');
           if (hoursStr === null) return; // cancelled
@@ -1060,6 +1198,19 @@ document.getElementById('sidebarHousesBtn').addEventListener('click', () => {
   }
 });
 
+document.getElementById('sidebarTownStatusBtn').addEventListener('click', () => {
+  const panel = document.getElementById('townsPanel');
+  const isOpen = panel.classList.contains('open');
+  closeAllPanels();
+  if (!isOpen) {
+    panel.classList.add('open');
+    document.getElementById('sidebarTownStatusBtn').classList.add('active');
+    document.body.classList.add('towns-panel-open');
+    if (townsListEl) townsListEl.innerHTML = '<div style="color:#888;padding:12px">Loading town status…</div>';
+    loadTownStatus();
+  }
+});
+
 document.getElementById('sidebarFiresBtn').addEventListener('click', () => {
   fireEnabled = !fireEnabled;
   document.getElementById('sidebarFiresBtn').classList.toggle('active', fireEnabled);
@@ -1094,8 +1245,7 @@ async function pollPlayers() {
   if (pendingUpdate) return;  // Continue polling even when window is hidden
   pendingUpdate = true;
   try {
-    const target = `${API_URL}?password=${encodeURIComponent(API_PASSWORD)}`;
-    const res = await fetchWithProxy(target);
+    const res = await fetchWithProxy(`${API_URL}?password=${encodeURIComponent(API_PASSWORD)}`);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -1256,8 +1406,8 @@ async function sendChatMessage(message) {
     const friendlyDisplay = fullMessage.replace(/<mt_link[^>]*>\(Open Map\)<\/>/g, '📍 [map link]');
     displayChatMessage(displayName, friendlyDisplay, true, isAnnouncement);
     const typeParam = isAnnouncement ? 'announce' : 'message';
-    const url = `${CHAT_API_URL}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`;
-    const res = await fetchWithProxy(url, { method: 'POST' });
+    const url = CHAT_API_URL;
+    const res = await fetchWithProxy(`${url}?password=${encodeURIComponent(API_PASSWORD)}&message=${encodeURIComponent(displayMsg)}&type=${encodeURIComponent(typeParam)}&color=${encodeURIComponent(selectedColor)}`, { method: 'POST' });
     if (!res.ok) {
       console.warn(`Chat API response: ${res.status}`);
       displayChatMessage('System', `Failed to send message (HTTP ${res.status})`);
@@ -1567,15 +1717,16 @@ function decryptConfig(encryptedText) {
 }
 
 function getCurrentConfig() {
-  // Read from localStorage so it stays in sync with what's actually saved
   try {
     const stored = localStorage.getItem('mtconfig');
     if (stored) return JSON.parse(stored);
-  } catch(e) {}
+  } catch (e) {}
   return {
+    config_source: 'manual',
     api_base: '',
     chat_history_url: '',
     api_password: '',
+    allow_all: false,
     locationTracking: {
       onlineMode: 'time_limit',
       onlineMinutes: 60,
@@ -1599,9 +1750,8 @@ function loadConfigFromStorage() {
       if (config.locationTracking) {
         applyLocationTrackingConfig(config.locationTracking);
       }
-      // Set access level based on config source
       if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
-      else if (config.config_source === 'manual') ALLOW_ALL = true;
+      else ALLOW_ALL = true;
     } catch (e) {}
   }
 }
@@ -1835,16 +1985,17 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
     alert('Please paste an encrypted config code');
     return;
   }
-  
+
   const config = decryptConfig(encryptedText);
   if (!config) {
     alert('Invalid or corrupted encrypted config. Please check the code and try again.');
     return;
   }
-  
+
   saveConfigToStorage({
     ...config,
     config_source: 'encrypted',
+    encrypted_payload: encryptedText,
     locationTracking: config.locationTracking || locationTrackingConfig
   });
   API_PASSWORD = config.api_password;
@@ -1855,7 +2006,7 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
   if (config.locationTracking) {
     applyLocationTrackingConfig(config.locationTracking);
   }
-  
+
   settingsModal.classList.remove('active');
   restartPolling();
   alert('Configuration applied!');
@@ -1865,7 +2016,7 @@ document.getElementById('cancelEncryptedBtn').addEventListener('click', () => {
   settingsModal.classList.remove('active');
 });
 
-document.getElementById('exportConfigBtn').addEventListener('click', () => {
+document.getElementById('exportConfigBtn').addEventListener('click', async () => {
   if (getCurrentConfig().config_source === 'encrypted') return; // blocked
   const allowAll = document.getElementById('allowAllCheckbox').checked;
   const base = getCurrentConfig();
@@ -1876,17 +2027,16 @@ document.getElementById('exportConfigBtn').addEventListener('click', () => {
   display.style.display = 'block';
 
   const copyBtn = document.getElementById('exportConfigBtn');
-  copyBtn.textContent = 'Copy Encrypted Config';
-  copyBtn.onclick = (e) => {
-    e.preventDefault();
-    navigator.clipboard.writeText(encrypted).then(() => {
-      copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
-        copyBtn.textContent = 'Export Config As Encrypted';
-        copyBtn.onclick = null;
-      }, 2000);
-    });
-  };
+  try {
+    await navigator.clipboard.writeText(encrypted);
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => {
+      copyBtn.textContent = 'Export Config As Encrypted';
+    }, 2000);
+  } catch (err) {
+    console.warn('Clipboard write failed:', err);
+    alert('Encrypted config was generated, but clipboard copy failed. Please select and copy the text manually.');
+  }
 });
 
 // Race Track functionality
@@ -2870,6 +3020,9 @@ function closeAllPanels() {
   document.getElementById('housesPanel').classList.remove('open');
   document.getElementById('sidebarHousesBtn').classList.remove('active');
   document.body.classList.remove('houses-panel-open');
+  document.getElementById('townsPanel').classList.remove('open');
+  document.getElementById('sidebarTownStatusBtn').classList.remove('active');
+  document.body.classList.remove('towns-panel-open');
   setHeatmapMode(null);
 }
 
