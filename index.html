@@ -253,6 +253,9 @@
     body.houses-panel-open .loc-tracker-panel {
       left: 282px; /* 54 + 220 + 8 */
     }
+    body.towns-panel-open .loc-tracker-panel {
+      left: 282px; /* 54 + 220 + 8 */
+    }
 
     .loc-tracker-header {
       background: #0d0d0d;
@@ -373,7 +376,7 @@
       left: 54px;
       top: 0;
       bottom: 0;
-      width: 220px;
+      width: 250px;
       background: #1a1a1a;
       border-right: 2px solid #00b1e0;
       display: none;
@@ -394,7 +397,11 @@
       align-items: center;
     }
     .houses-title { color: #00b1e0; }
-    .houses-body { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+    .houses-body { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+    #housesList { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding-right: 4px; }
+    #housesList::-webkit-scrollbar { width: 8px; }
+    #housesList::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+    #housesList::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
     .houses-close-btn {
       background: #00b1e0;
       color: #000;
@@ -406,6 +413,48 @@
       font-weight: bold;
     }
     .houses-close-btn:hover { background: #33d4ff; }
+    .towns-panel {
+      position: fixed;
+      left: 54px;
+      top: 0;
+      bottom: 0;
+      width: 220px;
+      background: #1a1a1a;
+      border-right: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      z-index: 100;
+    }
+    .towns-panel.open { display: flex; }
+    .towns-header {
+      background: #0d0d0d;
+      padding: 13px 15px;
+      border-bottom: 2px solid #00b1e0;
+      font-weight: bold;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .towns-title { color: #00b1e0; }
+    .towns-body { flex: 1; padding: 14px 12px; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+    #townsList { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+    #townsList::-webkit-scrollbar { width: 8px; }
+    #townsList::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+    #townsList::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
+    .towns-close-btn {
+      background: #00b1e0;
+      color: #000;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .towns-close-btn:hover { background: #33d4ff; }
     .heatmap-mode-btn {
       width: 100%;
       padding: 10px 12px;
@@ -846,19 +895,52 @@
     
     /* Coord display — always clear of icon sidebar; shifts right when a left panel is open */
     .leaflet-bottom.leaflet-left {
-      left: 62px !important;
+      left: 70px !important;
       transition: left 0.15s;
     }
     body.players-panel-open .leaflet-bottom.leaflet-left {
-      left: 314px !important; /* 54 + 252 + 8 */
+      left: 322px !important; /* 54 + 252 + 16 */
     }
     body.races-panel-open .leaflet-bottom.leaflet-left {
-      left: 334px !important; /* 54 + 272 + 8 */
+      left: 342px !important; /* 54 + 272 + 16 */
     }
     body.houses-panel-open .leaflet-bottom.leaflet-left {
-      left: 282px !important; /* 54 + 220 + 8 */
+      left: 320px !important; /* 54 + 250 + 16 */
     }
 
+    body.sidebar-expanded .leaflet-bottom.leaflet-left {
+      left: 200px !important;
+    }
+    body.sidebar-expanded.players-panel-open .leaflet-bottom.leaflet-left {
+      left: 450px !important;
+    }
+    body.sidebar-expanded.races-panel-open .leaflet-bottom.leaflet-left {
+      left: 472px !important;
+    }
+    body.sidebar-expanded.heatmap-panel-open .leaflet-bottom.leaflet-left,
+    body.sidebar-expanded.houses-panel-open .leaflet-bottom.leaflet-left {
+      left: 450px !important;
+    }
+    body.sidebar-expanded .loc-tracker-panel {
+      left: 200px;
+    }
+    body.sidebar-expanded.players-panel-open .loc-tracker-panel {
+      left: 450px !important; /* 200 + 250 */
+    }
+    body.sidebar-expanded.races-panel-open .loc-tracker-panel {
+      left: 480px !important; /* 200 + 280 */
+    }
+    body.sidebar-expanded.heatmap-panel-open .loc-tracker-panel,
+    body.sidebar-expanded.houses-panel-open .loc-tracker-panel {
+      left: 458px !important; /* 200 + 250 + 8 */
+    }
+    body.sidebar-expanded #checkpoint-manager,
+    body.sidebar-expanded .heatmap-panel,
+    body.sidebar-expanded .houses-panel,
+    body.sidebar-expanded .towns-panel,
+    body.sidebar-expanded .player-list-sidebar {
+      left: 200px !important;
+    }
 
 
     .checkpoint-div-icon {
@@ -955,6 +1037,7 @@
 
     .sidebar-icon-btn {
       width: 38px;
+      min-width: 38px;
       height: 38px;
       border-radius: 7px;
       background: #1a1a1a;
@@ -965,10 +1048,70 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.15s;
       flex-shrink: 0;
       position: relative;
       outline: none;
+      gap: 0;
+      padding: 0;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
+
+    #left-icon-sidebar {
+      transition: none;
+      overflow: hidden;
+    }
+
+    #left-icon-sidebar.expanded {
+      width: 180px;
+      align-items: stretch;
+      padding: 10px;
+    }
+
+    #left-icon-sidebar.expanded .sidebar-icon-btn {
+      width: 100%;
+      justify-content: flex-start;
+      padding: 10px 12px 10px 10px;
+      font-size: 14px;
+      gap: 10px;
+    }
+
+    .sidebar-icon-btn img {
+      width: 24px;
+      height: 24px;
+      display: block;
+    }
+    .sidebar-icon {
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 38px;
+      margin-right: 0;
+      box-sizing: border-box;
+    }
+
+    .sidebar-label {
+      display: inline-block;
+      max-width: 0;
+      opacity: 0;
+      color: #fff;
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: none;
+      flex: 1 1 auto;
+    }
+
+    #left-icon-sidebar.expanded .sidebar-label {
+      max-width: 120px;
+      opacity: 1;
+    }
+
+    #left-icon-sidebar.expanded .sidebar-icon-btn .sidebar-tooltip {
+      display: none;
     }
 
     .sidebar-icon-btn:hover {
@@ -1792,35 +1935,52 @@
 
   <!-- Left Icon Sidebar -->
   <div id="left-icon-sidebar">
-    <button class="sidebar-icon-btn" id="sidebarSettingsBtn">
-      ⚙️
+    <button class="sidebar-icon-btn" id="sidebarExpandBtn" title="Toggle sidebar">
+      <span class="sidebar-icon"><img src="assets/Burger.png" alt="Menu"></span>
+      <span class="sidebar-label">Menu</span>
+      <span class="sidebar-tooltip">Toggle sidebar</span>
+    </button>
+    <button class="sidebar-icon-btn" id="sidebarSettingsBtn" title="Open settings">
+      <span class="sidebar-icon"><img src="assets/Settings.png" alt="Settings"></span>
+      <span class="sidebar-label">Settings</span>
       <span class="sidebar-tooltip">Settings</span>
     </button>
-    <button class="sidebar-icon-btn" id="sidebarPlayersBtn">
-      👥
+    <button class="sidebar-icon-btn" id="sidebarPlayersBtn" title="Players & Chat">
+      <span class="sidebar-icon">👥</span>
+      <span class="sidebar-label">Players</span>
       <span class="sidebar-tooltip">Players &amp; Chat</span>
     </button>
     <div class="sidebar-divider"></div>
-    <button class="sidebar-icon-btn" id="sidebarRacesMgrBtn">
-      🏁
+    <button class="sidebar-icon-btn" id="sidebarRacesMgrBtn" title="Races & Checkpoints">
+      <span class="sidebar-icon">🏁</span>
+      <span class="sidebar-label">Races</span>
       <span class="sidebar-tooltip">Races &amp; Checkpoints</span>
     </button>
     <div class="sidebar-divider"></div>
-    <button class="sidebar-icon-btn" id="sidebarHeatmapBtn">
-      🔥
+    <button class="sidebar-icon-btn" id="sidebarHeatmapBtn" title="Heatmap">
+      <span class="sidebar-icon">🔥</span>
+      <span class="sidebar-label">Heatmap</span>
       <span class="sidebar-tooltip">Heatmap</span>
     </button>
-    <button class="sidebar-icon-btn" id="sidebarHousesBtn" title="Show houses">
-      🏠
-      <span class="sidebar-tooltip">Houses</span>
+    <button class="sidebar-icon-btn" id="sidebarHousesBtn" title="Show housing">
+      <span class="sidebar-icon"><img src="assets/Housing.png" alt="Housing"></span>
+      <span class="sidebar-label">Housing</span>
+      <span class="sidebar-tooltip">Housing</span>
+    </button>
+    <button class="sidebar-icon-btn" id="sidebarTownStatusBtn" title="Show town status">
+      <span class="sidebar-icon"><img src="assets/Town Bonus.png" alt="Town Status"></span>
+      <span class="sidebar-label">Town Status</span>
+      <span class="sidebar-tooltip">Town Status</span>
     </button>
     <button class="sidebar-icon-btn" id="sidebarFiresBtn" title="Toggle fire markers">
-      🧯
+      <span class="sidebar-icon">🧯</span>
+      <span class="sidebar-label">Fires</span>
       <span class="sidebar-tooltip">Show Fires</span>
     </button>
     <div class="sidebar-divider"></div>
     <button class="sidebar-icon-btn active" id="togglePlayerIconsBtn" title="Toggle player icons">
-      👤
+      <span class="sidebar-icon">👤</span>
+      <span class="sidebar-label">Icons</span>
       <span class="sidebar-tooltip">Toggle Player Icons</span>
     </button>
   </div>
@@ -1839,11 +1999,20 @@
   <!-- Houses Panel -->
   <div class="houses-panel" id="housesPanel">
     <div class="houses-header">
-      <span class="houses-title">Houses</span>
-      <button class="houses-close-btn" id="housesCloseBtn">Close</button>
+      <span class="houses-title">Housing</span>
     </div>
     <div class="houses-body" id="housesBody">
-      <div id="housesList" style="display:flex;flex-direction:column;gap:8px;">Loading…</div>
+      <div id="housesList" style="display:flex;flex-direction:column;gap:8px;overflow-y:auto;flex:1;">Loading…</div>
+    </div>
+  </div>
+
+  <!-- Town Status Panel -->
+  <div class="towns-panel" id="townsPanel">
+    <div class="towns-header">
+      <span class="towns-title">Town Status</span>
+    </div>
+    <div class="towns-body" id="townsBody">
+      <div id="townsList" style="display:flex;flex-direction:column;gap:10px;overflow-y:auto;flex:1;">Loading…</div>
     </div>
   </div>
 
