@@ -2144,10 +2144,17 @@ function loadConfigFromStorage() {
 }
 
 function saveConfigToStorage(config) {
+  const serialized = JSON.stringify(config);
   try {
-    localStorage.setItem('mtconfig', JSON.stringify(config));
+    localStorage.setItem('mtconfig', serialized);
   } catch (err) {
-    throw new Error(`Unable to save configuration in this browser: ${err.message}`);
+    // The heatmap is optional and can grow large enough to exhaust the browser quota.
+    try {
+      localStorage.removeItem(HEATMAP_STORAGE_KEY);
+      localStorage.setItem('mtconfig', serialized);
+    } catch (retryErr) {
+      throw new Error(`Unable to save configuration in this browser: ${retryErr.message}`);
+    }
   }
 }
 
