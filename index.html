@@ -600,6 +600,31 @@
 
     .chat-sidebar.open { display: flex; }
 
+    .delivery-site-marker-icon {
+      background: none !important;
+      border: none !important;
+    }
+    .delivery-site-marker-circle {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #ddb71e;
+      border: 2px solid #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
+    }
+    .delivery-site-marker-circle img {
+      width: 10px;
+      height: 10px;
+      display: block;
+    }
+
+    body.chat-sidebar-open .delivery-site-panel {
+      right: 300px;
+    }
+
     .chat-header {
       background: #0d0d0d;
       padding: 15px;
@@ -1929,6 +1954,149 @@
     .saved-races-list { display: flex; flex-direction: column; gap: 0; max-height: none; overflow-y: auto; }
 
     .race-folder-wrapper { display: flex; flex-direction: column; }
+
+    .delivery-site-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 620px;
+      max-width: 100%;
+      background: #111;
+      border-left: 2px solid #00b1e0;
+      display: none;
+      flex-direction: column;
+      color: #fff;
+      z-index: 100;
+      box-shadow: -4px 0 18px rgba(0,0,0,0.7);
+      font-family: Arial, sans-serif;
+    }
+    .delivery-site-panel.open { display: flex; }
+    .delivery-site-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 16px;
+      background: #0d0d0d;
+      border-bottom: 1px solid #222;
+    }
+    .delivery-site-title {
+      font-size: 16px;
+      font-weight: bold;
+      color: #00b1e0;
+    }
+    .delivery-site-subtitle {
+      font-size: 12px;
+      color: #aaa;
+      margin-top: 3px;
+    }
+    .delivery-site-close {
+      background: transparent;
+      border: 1px solid #333;
+      color: #fff;
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 0;
+    }
+    .delivery-site-export {
+      background: transparent;
+      border: 1px solid #333;
+      color: #fff;
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 0;
+    }
+    .delivery-site-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    .delivery-site-column {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px;
+      min-width: 0;
+    }
+    .delivery-site-column + .delivery-site-column {
+      border-left: 1px solid #222;
+    }
+    .delivery-site-column-title {
+      margin-bottom: 12px;
+      font-size: 13px;
+      font-weight: bold;
+      color: #00b1e0;
+    }
+    .delivery-site-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .delivery-site-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .delivery-site-controls input,
+    .delivery-site-controls select {
+      width: 100%;
+      border: 1px solid #2a2a2a;
+      background: #101010;
+      color: #fff;
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      outline: none;
+    }
+    .delivery-site-controls select {
+      flex: 0 0 115px;
+    }
+    .delivery-site-list .empty {
+      color: #777;
+      font-size: 12px;
+      padding: 12px 10px;
+      background: #161616;
+      border-radius: 6px;
+      border: 1px dashed #222;
+    }
+    .delivery-site-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px 12px;
+      background: #141414;
+      border: 1px solid #222;
+      border-radius: 8px;
+    }
+    .delivery-site-row .row-title {
+      font-size: 13px;
+      font-weight: bold;
+      color: #fff;
+    }
+    .delivery-site-row .row-meta {
+      font-size: 12px;
+      color: #bbb;
+      line-height: 1.4;
+    }
+    .delivery-site-row .row-small {
+      font-size: 11px;
+      color: #888;
+    }
+    .delivery-site-tooltip .leaflet-tooltip-content {
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      border: 1px solid #00b1e0;
+      padding: 4px 8px;
+      font-size: 12px;
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -1976,6 +2144,11 @@
       <span class="sidebar-icon">🧯</span>
       <span class="sidebar-label">Fires</span>
       <span class="sidebar-tooltip">Show Fires</span>
+    </button>
+    <button class="sidebar-icon-btn" id="sidebarDeliverySitesBtn" title="Toggle delivery site icons">
+      <span class="sidebar-icon"><img src="assets/Delivery Site.png" alt="Delivery Sites"></span>
+      <span class="sidebar-label">Sites</span>
+      <span class="sidebar-tooltip">Toggle Delivery Sites</span>
     </button>
     <div class="sidebar-divider"></div>
     <button class="sidebar-icon-btn active" id="togglePlayerIconsBtn" title="Toggle player icons">
@@ -2042,6 +2215,40 @@
       <div class="loc-tracker-empty">No location data yet.</div>
     </div>
     <div class="loc-tracker-footer">Last hour · updates every second</div>
+  </div>
+
+  <div class="delivery-site-panel" id="deliverySitePanel">
+    <div class="delivery-site-header">
+      <div>
+        <div class="delivery-site-title" id="deliverySiteTitle">Delivery Site</div>
+        <div class="delivery-site-subtitle" id="deliverySiteSubtitle"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <button class="delivery-site-export" id="deliverySiteExportBtn" title="Export delivery site JSON">⤓</button>
+        <button class="delivery-site-close" id="deliverySiteCloseBtn" title="Close">✕</button>
+      </div>
+    </div>
+    <div class="delivery-site-body">
+      <div class="delivery-site-column">
+        <div class="delivery-site-column-title">Input Inventory</div>
+        <div class="delivery-site-list" id="deliverySiteInventoryList"></div>
+      </div>
+      <div class="delivery-site-column">
+        <div class="delivery-site-column-title">Incoming Deliveries</div>
+        <div class="delivery-site-list" id="deliverySiteIncomingList"></div>
+      </div>
+      <div class="delivery-site-column">
+        <div class="delivery-site-column-title">Outgoing Deliveries</div>
+        <div class="delivery-site-controls">
+          <input type="text" id="deliverySearchInput" placeholder="Search deliveries..." />
+          <select id="deliverySortSelect" title="Sort deliveries">
+            <option value="name">Sort: Name</option>
+            <option value="cargo">Sort: Cargo Count</option>
+          </select>
+        </div>
+        <div class="delivery-site-list" id="deliverySiteDeliveriesList"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Heatmap Panel -->
@@ -2197,6 +2404,14 @@
             <input type="password" id="apiBaseUrl" placeholder="http://example.com:21120" autocomplete="off" />
             <button class="toggle-blur" id="toggleBaseUrl">Show</button>
           </div>
+        </div>
+        <div class="settings-section">
+          <label>Tracking API Base (bot)</label>
+          <div style="position: relative;">
+            <input type="password" id="trackingBaseUrl" placeholder="http://bot-host:3457" autocomplete="off" />
+            <button class="toggle-blur" id="toggleTrackingBaseUrl">Show</button>
+          </div>
+          <div class="info-text" style="margin-top:6px;">Optional: Use a dedicated bot tracker service for player and town data.</div>
         </div>
         <div class="settings-section">
           <label>Chat History URL</label>
