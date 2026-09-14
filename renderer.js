@@ -466,7 +466,7 @@ async function loadTownStatus() {
   if (TRACKING_BASE) {
     const url = `${TRACKING_BASE}/tracking/towns`;
     try {
-      const res = await fetchWithProxy(`${url}?password=${encodeURIComponent(API_PASSWORD)}`, {}, false);
+      const res = await fetchWithProxy(`${url}?password=${encodeURIComponent(API_PASSWORD)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!json || !json.succeeded || !json.data || !Array.isArray(json.data.towns)) {
@@ -1601,8 +1601,7 @@ async function pollPlayers() {
   if (pendingUpdate) return;  // Continue polling even when window is hidden
   pendingUpdate = true;
   try {
-    const useProxy = !TRACKING_URL;
-    const res = await fetchWithProxy(`${fetchUrl}?password=${encodeURIComponent(API_PASSWORD)}`, {}, useProxy);
+    const res = await fetchWithProxy(`${fetchUrl}?password=${encodeURIComponent(API_PASSWORD)}`);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -2105,11 +2104,9 @@ function applyStoredConfig(config) {
     API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
     CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   }
-  if (config.tracking_base) {
-    TRACKING_BASE = config.tracking_base.replace(/\/$/, '');
-    TRACKING_URL = TRACKING_BASE + '/tracking/players';
-  }
-  if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+  TRACKING_BASE = config.tracking_base ? config.tracking_base.replace(/\/$/, '') : '';
+  TRACKING_URL = TRACKING_BASE ? TRACKING_BASE + '/tracking/players' : '';
+  CHAT_HISTORY_URL = config.chat_history_url || '';
   if (config.api_password) API_PASSWORD = config.api_password;
   if (config.locationTracking) {
     applyLocationTrackingConfig(config.locationTracking);
