@@ -2,6 +2,8 @@ let API_PASSWORD = "";
 let API_URL = "";
 let CHAT_API_URL = "";
 let CHAT_HISTORY_URL = "";
+let TRACKING_BASE = "";
+let TRACKING_URL = "";
 // true = full access; false = players-on-map only (no chat, no location history)
 let ALLOW_ALL = false;
 const IS_ELECTRON = navigator.userAgent.includes('Electron');
@@ -2142,7 +2144,11 @@ function loadConfigFromStorage() {
 }
 
 function saveConfigToStorage(config) {
-  localStorage.setItem('mtconfig', JSON.stringify(config));
+  try {
+    localStorage.setItem('mtconfig', JSON.stringify(config));
+  } catch (err) {
+    throw new Error(`Unable to save configuration in this browser: ${err.message}`);
+  }
 }
 
 loadConfigFromStorage();
@@ -2316,14 +2322,20 @@ function saveManualConfig() {
     offlineMinutes: Number(document.getElementById('offlineTrackingMinutes').value) || locationTrackingConfig.offlineMinutes
   };
 
-  saveConfigToStorage({
-    ...config,
-    tracking_base: document.getElementById('trackingBaseUrl').value.trim(),
-    locationTracking
-  });
+  const trackingBase = document.getElementById('trackingBaseUrl').value.trim();
+  try {
+    saveConfigToStorage({
+      ...config,
+      tracking_base: trackingBase,
+      locationTracking
+    });
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
-  TRACKING_BASE = config.tracking_base ? config.tracking_base.replace(/\/$/, '') : '';
+  TRACKING_BASE = trackingBase ? trackingBase.replace(/\/$/, '') : '';
   TRACKING_URL = TRACKING_BASE ? TRACKING_BASE + '/tracking/players' : '';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
