@@ -6,7 +6,7 @@ let TRACKING_BASE = "";
 let TRACKING_URL = "";
 // true = full access; false = players-on-map only (no chat, no location history)
 let ALLOW_ALL = false;
-const IS_ELECTRON = navigator.userAgent.includes('Electron');
+const IS_ELECTRON = Boolean(window.electronAPI);
 
 // Cloudflare Worker proxy — routes HTTP game server requests through HTTPS
 const CORS_PROXY = IS_ELECTRON ? '' : 'https://stupid-map.vandeveldepieter-be.workers.dev/?url=';
