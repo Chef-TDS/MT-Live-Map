@@ -1,0 +1,52 @@
+{
+  "appId": "com.motortown.livemap",
+  "productName": "Motor Town Live Map",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "Main.js",
+    "Index.html",
+    "renderer.js",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "map_new.png",
+      "to": "map_new.png"
+    },
+    {
+      "from": "assets",
+      "to": "assets"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  },
+  "portable": {
+    "artifactName": "${productName}-${version}-portable.exe"
+  },
+  "mac": {
+    "target": ["dmg", "zip"],
+    "category": "public.app-category.utilities"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Utility"
+  }
+}

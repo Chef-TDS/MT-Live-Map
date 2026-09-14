@@ -1,0 +1,143 @@
+{
+	"data":
+	{
+		"Gujwa_ContainerHouse":
+		{
+			"owner_unique_id": "76561198168858021",
+			"expire_time": "2026.06.14-19.37.57 (+29 days 09 hours)"
+		},
+		"CheonJin_02":
+		{
+			"owner_unique_id": "76561199184848096",
+			"expire_time": "2026.06.10-15.20.08 (+25 days 05 hours)"
+		},
+		"Downtown_01":
+		{
+			"owner_unique_id": "76561198171914886",
+			"expire_time": "2026.06.14-01.01.21 (+28 days 15 hours)"
+		},
+		"Downtown_02":
+		{
+			"owner_unique_id": "76561198046180449",
+			"expire_time": "2026.06.03-09.06.40 (+17 days 23 hours)"
+		},
+		"SeoGuiPo_WestTown_01":
+		{
+			"owner_unique_id": "76561198168858021",
+			"expire_time": "2026.06.14-19.37.43 (+29 days 09 hours)"
+		},
+		"SungSan_01":
+		{
+			"owner_unique_id": "76561198169386754",
+			"expire_time": "2026.06.09-18.06.35 (+24 days 08 hours)"
+		},
+		"JoCheon_01":
+		{
+			"owner_unique_id": "76561199431611147",
+			"expire_time": "2026.06.13-04.50.35 (+27 days 19 hours)"
+		},
+		"PyoSun_01":
+		{
+			"owner_unique_id": "76561198150883072",
+			"expire_time": "2026.06.12-17.22.50 (+27 days 07 hours)"
+		},
+		"SinChang_01":
+		{
+			"owner_unique_id": "76561198386749332",
+			"expire_time": "2026.06.11-12.12.04 (+26 days 02 hours)"
+		},
+		"Hallim_01":
+		{
+			"owner_unique_id": "76561197992924036",
+			"expire_time": "2026.06.01-02.19.01 (+15 days 16 hours)"
+		},
+		"Aewol_01":
+		{
+			"owner_unique_id": "76561198074030386",
+			"expire_time": "2026.05.27-18.39.46 (+11 days 08 hours)"
+		},
+		"Gapa_01":
+		{
+			"owner_unique_id": "76561199588035442",
+			"expire_time": "2026.06.08-00.57.20 (+22 days 15 hours)"
+		},
+		"Daejin_01":
+		{
+			"owner_unique_id": "76561198880572467",
+			"expire_time": "2026.05.27-14.55.09 (+11 days 05 hours)"
+		},
+		"GwangjinTown_01":
+		{
+			"owner_unique_id": "76561199385811515",
+			"expire_time": "2026.06.13-02.12.06 (+27 days 16 hours)"
+		},
+		"GwangjinTown_02":
+		{
+			"owner_unique_id": "76561198020119231",
+			"expire_time": "2026.06.09-18.39.42 (+24 days 08 hours)"
+		},
+		"Sanho_02":
+		{
+			"owner_unique_id": "76561198046180449",
+			"expire_time": "2026.06.03-09.07.00 (+17 days 23 hours)"
+		},
+		"Dongsan_01":
+		{
+			"owner_unique_id": "76561199184848096",
+			"expire_time": "2026.06.10-15.20.17 (+25 days 05 hours)"
+		},
+		"Biyang_02":
+		{
+			"owner_unique_id": "76561197984853327",
+			"expire_time": "2026.06.02-22.26.35 (+17 days 12 hours)"
+		},
+		"Gaon_01":
+		{
+			"owner_unique_id": "76561197975822202",
+			"expire_time": "2026.06.12-19.34.04 (+27 days 09 hours)"
+		},
+		"Biyang_01":
+		{
+			"owner_unique_id": "76561198171914886",
+			"expire_time": "2026.06.14-01.01.10 (+28 days 15 hours)"
+		},
+		"Gwangjin_01":
+		{
+			"owner_unique_id": "76561199210915774",
+			"expire_time": "2026.05.19-22.46.19 (+3 days 12 hours)"
+		},
+		"Obo_02":
+		{
+			"owner_unique_id": "76561199015405239",
+			"expire_time": "2026.06.14-19.09.31 (+29 days 09 hours)"
+		},
+		"Obo_01":
+		{
+			"owner_unique_id": "76561199015405239",
+			"expire_time": "2026.06.14-19.09.39 (+29 days 09 hours)"
+		},
+		"Baram_01":
+		{
+			"owner_unique_id": "76561198052693445",
+			"expire_time": "2026.06.07-19.46.33 (+22 days 09 hours)"
+		},
+		"Gwangjin_02":
+		{
+			"owner_unique_id": "76561199259497507",
+			"expire_time": "2026.06.14-18.12.33 (+29 days 08 hours)"
+		},
+		"Oedo_01":
+		{
+			"owner_unique_id": "76561199827197254",
+			"expire_time": "2026.06.10-00.07.38 (+24 days 14 hours)"
+		},
+		"FirstHouse":
+		{
+			"owner_unique_id": "76561198171914886",
+			"expire_time": "2026.06.06-01.17.38 (+20 days 15 hours)"
+		}
+	},
+	"message": "",
+	"succeeded": true,
+	"code": 0
+}

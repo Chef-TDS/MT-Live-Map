@@ -1,0 +1,25 @@
+{
+  "name": "motortown-map",
+  "version": "1.0.0",
+  "description": "Motor Town Dedicated Server Live Map - Admin Tool for real-time player tracking and chat management",
+  "main": "Main.js",
+  "author": "Motor Town Admin Team",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --config electron-builder.json",
+    "build:win": "electron-builder --config electron-builder.json --win",
+    "build:mac": "electron-builder --config electron-builder.json --mac",
+    "build:linux": "electron-builder --config electron-builder.json --linux",
+    "build:all": "electron-builder --config electron-builder.json -mwl",
+    "dist": "electron-builder --config electron-builder.json"
+  },
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "leaflet": "^1.9.4"
+  }
+}
