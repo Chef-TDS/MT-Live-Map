@@ -9,8 +9,8 @@ const IS_ELECTRON = navigator.userAgent.includes('Electron');
 // Cloudflare Worker proxy — routes HTTP game server requests through HTTPS
 const CORS_PROXY = IS_ELECTRON ? '' : 'https://stupid-map.vandeveldepieter-be.workers.dev/?url=';
 
-async function fetchWithProxy(url, options = {}) {
-  if (IS_ELECTRON) return fetch(url, options);
+async function fetchWithProxy(url, options = {}, useProxy = true) {
+  if (IS_ELECTRON || !useProxy) return fetch(url, options);
   return fetch(CORS_PROXY + encodeURIComponent(url), options);
 }
 
@@ -34,6 +34,10 @@ function setApiConfig(config) {
     if (config.api_base) {
       API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
       CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
+    }
+    if (config.tracking_base) {
+      TRACKING_BASE = config.tracking_base.replace(/\/$/, '');
+      TRACKING_URL = TRACKING_BASE + '/tracking/players';
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
@@ -457,6 +461,23 @@ function renderHouseList() {
 }
 
 async function loadTownStatus() {
+  if (TRACKING_BASE) {
+    const url = `${TRACKING_BASE}/tracking/towns`;
+    try {
+      const res = await fetchWithProxy(`${url}?password=${encodeURIComponent(API_PASSWORD)}`, {}, false);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (!json || !json.succeeded || !json.data || !Array.isArray(json.data.towns)) {
+        renderTownStatusList({ towns: [] }, 'No town data available');
+        return;
+      }
+      renderTownStatusList(json.data, null);
+      return;
+    } catch (err) {
+      renderTownStatusList({ towns: [] }, `Load failed: ${err.message}`);
+      return;
+    }
+  }
   if (!API_URL) {
     renderTownStatusList({ towns: [] }, 'API not configured');
     return;
@@ -662,6 +683,338 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+const deliverySiteIcon = L.divIcon({
+  className: 'delivery-site-marker-icon',
+  html: '<div class="delivery-site-marker-circle"><img src="assets/Delivery Site.png" alt="Site"></div>',
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+  popupAnchor: [0, -10]
+});
+let deliverySitesData = {};
+let deliverySiteMarkers = {};
+let deliverySiteNameByGuid = {};
+let selectedDeliverySiteGuid = null;
+let deliverySiteMarkerMode = 0; // 0 = off, 1 = non-resident, 2 = all, 3 = resident
+let deliveryPollInterval = null;
+
+function isResidentDeliverySite(site) {
+  return String(site.name || '').trim().toLowerCase() === 'resident';
+}
+
+function fetchDeliverySitesFromApi() {
+  try {
+    const cfg = getCurrentConfig();
+    const base = (cfg && cfg.api_base) ? cfg.api_base.replace(/\/$/, '') : '';
+    if (!base) throw new Error('No API base configured');
+    const url = `${base}/delivery/sites${API_PASSWORD ? `?password=${encodeURIComponent(API_PASSWORD)}` : ''}`;
+    return fetchWithProxy(url)
+      .then(res => {
+        if (!res.ok) throw new Error('Fetch failed ' + res.status);
+        return res.json();
+      })
+      .then(json => {
+        if (!json || !json.data) return;
+        const sites = Object.values(json.data || {}).filter(site => site && site.guid);
+        // merge/replace data
+        deliverySitesData = {};
+        deliverySiteNameByGuid = {};
+        sites.forEach(site => {
+          deliverySitesData[site.guid] = site;
+          if (site.name) deliverySiteNameByGuid[site.guid] = site.name;
+        });
+        createDeliverySiteMarkers(sites);
+        updateDeliverySiteMarkers();
+        // refresh open panel if the currently selected site was updated
+        if (selectedDeliverySiteGuid && deliverySitesData[selectedDeliverySiteGuid]) {
+          renderDeliverySitePanel(deliverySitesData[selectedDeliverySiteGuid]);
+        }
+      })
+      .catch(err => {
+        console.warn('Delivery sites API fetch failed:', err);
+      });
+  } catch (e) {
+    return Promise.reject(e);
+  }
+}
+
+function loadDeliverySitesData() {
+  // Prefer API if configured; fall back to local example JSON for offline/demo mode
+  const cfg = getCurrentConfig();
+  const base = (cfg && cfg.api_base) ? cfg.api_base.replace(/\/$/, '') : '';
+  if (base) {
+    fetchDeliverySitesFromApi().catch(() => {
+      // fallback to local file when API cannot be reached
+      fetch('Delivery Sites/Delivery Sites API GET.json')
+        .then(res => res.json())
+        .then(json => {
+          const sites = Object.values(json.data || {}).filter(site => site && site.guid);
+          deliverySitesData = {};
+          deliverySiteNameByGuid = {};
+          sites.forEach(site => {
+            deliverySitesData[site.guid] = site;
+            if (site.name) deliverySiteNameByGuid[site.guid] = site.name;
+          });
+          createDeliverySiteMarkers(sites);
+          updateDeliverySiteMarkers();
+        })
+        .catch(err => console.warn('Failed to load local delivery sites:', err));
+    });
+  } else {
+    // no API configured — load local example data
+    fetch('Delivery Sites/Delivery Sites API GET.json')
+      .then(res => res.json())
+      .then(json => {
+        const sites = Object.values(json.data || {}).filter(site => site && site.guid);
+        deliverySitesData = {};
+        deliverySiteNameByGuid = {};
+        sites.forEach(site => {
+          deliverySitesData[site.guid] = site;
+          if (site.name) deliverySiteNameByGuid[site.guid] = site.name;
+        });
+        createDeliverySiteMarkers(sites);
+        updateDeliverySiteMarkers();
+      })
+      .catch(err => console.warn('Failed to load local delivery sites:', err));
+  }
+}
+
+function startDeliveryPolling() {
+  if (deliveryPollInterval) return;
+  // immediate fetch then every 10s
+  fetchDeliverySitesFromApi().catch(() => {});
+  deliveryPollInterval = setInterval(() => fetchDeliverySitesFromApi().catch(() => {}), 10000);
+}
+
+function stopDeliveryPolling() {
+  if (!deliveryPollInterval) return;
+  clearInterval(deliveryPollInterval);
+  deliveryPollInterval = null;
+}
+
+function updateDeliverySiteMarkers() {
+  Object.entries(deliverySiteMarkers).forEach(([guid, entry]) => {
+    const marker = entry.marker;
+    const resident = entry.resident;
+    let shouldShow = false;
+    if (deliverySiteMarkerMode === 1) shouldShow = !resident;
+    else if (deliverySiteMarkerMode === 2) shouldShow = true;
+    else if (deliverySiteMarkerMode === 3) shouldShow = resident;
+    if (shouldShow) {
+      if (!map.hasLayer(marker)) marker.addTo(map);
+    } else {
+      if (map.hasLayer(marker)) map.removeLayer(marker);
+    }
+  });
+  const btn = document.getElementById('sidebarDeliverySitesBtn');
+  if (btn) {
+    btn.classList.toggle('active', deliverySiteMarkerMode !== 0);
+    if (deliverySiteMarkerMode === 0) btn.title = 'Show delivery site icons';
+    else if (deliverySiteMarkerMode === 1) btn.title = 'Showing delivery sites except residents';
+    else if (deliverySiteMarkerMode === 2) btn.title = 'Showing all delivery sites';
+    else if (deliverySiteMarkerMode === 3) btn.title = 'Showing only resident delivery sites';
+  }
+}
+
+function cycleDeliverySiteMarkers() {
+  deliverySiteMarkerMode = (deliverySiteMarkerMode + 1) % 4;
+  updateDeliverySiteMarkers();
+}
+
+function createDeliverySiteMarkers(sites) {
+  sites.forEach(site => {
+    if (!site || !site.guid || deliverySiteMarkers[site.guid]) return;
+    const loc = parseLocation(site.location || '');
+    if (!loc) return;
+    const { mapX, mapY } = worldToMap(loc.x, loc.y);
+    const marker = L.marker([mapY, mapX], { icon: deliverySiteIcon, riseOnHover: false })
+      .bindTooltip(site.name || site.guid, { direction: 'top', className: 'delivery-site-tooltip' })
+      .on('click', () => {
+        if (selectedDeliverySiteGuid === site.guid) {
+          closeDeliverySitePanel();
+          return;
+        }
+        openDeliverySitePanel(site.guid);
+      });
+    deliverySiteMarkers[site.guid] = { marker, resident: isResidentDeliverySite(site) };
+  });
+}
+
+function openDeliverySitePanel(guid) {
+  const site = deliverySitesData[guid];
+  if (!site) return;
+  selectedDeliverySiteGuid = guid;
+  const panel = document.getElementById('deliverySitePanel');
+  if (panel) panel.classList.add('open');
+  renderDeliverySitePanel(site);
+  // start polling live API while the panel is open
+  startDeliveryPolling();
+}
+
+function closeDeliverySitePanel() {
+  selectedDeliverySiteGuid = null;
+  const panel = document.getElementById('deliverySitePanel');
+  if (panel) panel.classList.remove('open');
+  // stop polling when closed to save network and CPU
+  stopDeliveryPolling();
+}
+
+function getIncomingDeliveries(targetGuid) {
+  const incoming = [];
+  Object.values(deliverySitesData).forEach(site => {
+    const deliveries = Object.values(site.Deliveries || {});
+    deliveries.forEach(d => {
+      if (d.receiver_point === targetGuid) {
+        incoming.push({
+          ...d,
+          senderName: site.name || site.guid || 'Unknown source',
+          senderGuid: site.guid || 'Unknown source',
+          senderLocation: site.location || ''
+        });
+      }
+    });
+  });
+  return incoming;
+}
+
+function renderDeliverySitePanel(site) {
+  const titleEl = document.getElementById('deliverySiteTitle');
+  const subtitleEl = document.getElementById('deliverySiteSubtitle');
+  const inventoryEl = document.getElementById('deliverySiteInventoryList');
+  const deliveriesEl = document.getElementById('deliverySiteDeliveriesList');
+  if (titleEl) titleEl.textContent = site.name || 'Delivery Site';
+  if (subtitleEl) subtitleEl.textContent = site.guid || '';
+
+  const incomingEl = document.getElementById('deliverySiteIncomingList');
+  if (inventoryEl) {
+    const items = Object.values(site.InputInventory || {});
+    if (items.length === 0) {
+      inventoryEl.innerHTML = '<div class="empty">No input inventory available.</div>';
+    } else {
+      inventoryEl.innerHTML = items.map(item => {
+        const cargo = item.cargo || {};
+        const name = cargo.name || cargo.cargo_key || 'Unknown cargo';
+        const amount = item.amount ?? 0;
+        const maxAmount = item.max_amount ?? 0;
+        return `<div class="delivery-site-row"><div class="row-title">${escapeHtml(name)}</div><div class="row-meta">${escapeHtml(amount + '/' + maxAmount)}</div></div>`;
+      }).join('');
+    }
+  }
+
+  if (incomingEl) {
+    const incoming = getIncomingDeliveries(site.guid);
+    if (incoming.length === 0) {
+      incomingEl.innerHTML = '<div class="empty">No incoming deliveries to this site.</div>';
+    } else {
+      incomingEl.innerHTML = incoming.map(d => {
+        const cargoName = d.cargo_type || 'Cargo';
+        const amountText = d.num_cargos || '';
+        const idText = d.id ? `ID: ${d.id}` : 'ID: N/A';
+        const senderName = d.senderName || 'Unknown source';
+        return `<div class="delivery-site-row"><div class="row-title">${escapeHtml(cargoName)}</div><div class="row-meta">${escapeHtml(amountText)} · ${escapeHtml(idText)}</div><div class="row-small">From: ${escapeHtml(senderName)}</div></div>`;
+      }).join('');
+    }
+  }
+
+  if (deliveriesEl) {
+    // apply search and sort from the controls
+    const searchEl = document.getElementById('deliverySearchInput');
+    const sortEl = document.getElementById('deliverySortSelect');
+
+    // attach guarded listeners so typing or sort changes re-render this panel
+    if (searchEl && !searchEl.dataset.delAttach) {
+      searchEl.addEventListener('input', () => {
+        if (selectedDeliverySiteGuid && deliverySitesData[selectedDeliverySiteGuid]) {
+          renderDeliverySitePanel(deliverySitesData[selectedDeliverySiteGuid]);
+        }
+      });
+      searchEl.dataset.delAttach = '1';
+    }
+    if (sortEl && !sortEl.dataset.delAttach) {
+      sortEl.addEventListener('change', () => {
+        if (selectedDeliverySiteGuid && deliverySitesData[selectedDeliverySiteGuid]) {
+          renderDeliverySitePanel(deliverySitesData[selectedDeliverySiteGuid]);
+        }
+      });
+      sortEl.dataset.delAttach = '1';
+    }
+
+      // attach export button handler once
+      const exportBtn = document.getElementById('deliverySiteExportBtn');
+      if (exportBtn && !exportBtn.dataset.delAttach) {
+        exportBtn.addEventListener('click', () => {
+          if (!selectedDeliverySiteGuid) { alert('No delivery site selected.'); return; }
+          const site = deliverySitesData[selectedDeliverySiteGuid];
+          if (!site) { alert('No data available for this site.'); return; }
+          const safeName = (site.name || site.guid || 'delivery-site').toString().replace(/[^a-z0-9-_\.]/gi, '_');
+          const filename = `${safeName}.json`;
+          try {
+            const blob = new Blob([JSON.stringify(site, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            console.warn('Export failed', e);
+            alert('Export failed: ' + (e && e.message ? e.message : 'unknown'));
+          }
+        });
+        exportBtn.dataset.delAttach = '1';
+      }
+
+    const searchTerm = searchEl ? (searchEl.value || '').toLowerCase().trim() : '';
+    const sortMode = sortEl ? (sortEl.value || 'name') : 'name';
+
+    let deliveries = Object.values(site.Deliveries || {});
+    if (!deliveries || deliveries.length === 0) {
+      deliveriesEl.innerHTML = '<div class="empty">No outgoing deliveries.</div>';
+    } else {
+      // filter by searchTerm
+      if (searchTerm) {
+        deliveries = deliveries.filter(d => {
+          const cargoName = (d.cargo_type || '').toString().toLowerCase();
+          const receiverName = (deliverySiteNameByGuid[d.receiver_point] || d.receiver_point || '').toString().toLowerCase();
+          const idText = d.id ? String(d.id) : '';
+          const amountText = d.num_cargos ? d.num_cargos.toString().toLowerCase() : '';
+          return cargoName.includes(searchTerm) || receiverName.includes(searchTerm) || idText.includes(searchTerm) || amountText.includes(searchTerm);
+        });
+      }
+
+      // sort
+      deliveries.sort((a, b) => {
+        if (sortMode === 'cargo') {
+          const parseCount = (s) => {
+            if (!s) return 0;
+            try {
+              const parts = s.toString().split('/').map(x => parseInt(x, 10));
+              if (!isNaN(parts[0])) return parts[0];
+            } catch (e) {}
+            const n = parseInt(s, 10);
+            return isNaN(n) ? 0 : n;
+          };
+          return parseCount(b.num_cargos) - parseCount(a.num_cargos);
+        }
+        // default: sort by cargo name asc
+        const an = (a.cargo_type || '').toString();
+        const bn = (b.cargo_type || '').toString();
+        return an.localeCompare(bn);
+      });
+
+      deliveriesEl.innerHTML = deliveries.map(d => {
+        const cargoName = d.cargo_type || 'Cargo';
+        const amountText = d.num_cargos || '';
+        const idText = d.id ? `ID: ${d.id}` : 'ID: N/A';
+        const receiverName = deliverySiteNameByGuid[d.receiver_point] || d.receiver_point || 'Unknown destination';
+        return `<div class="delivery-site-row"><div class="row-title">${escapeHtml(cargoName)}</div><div class="row-meta">${escapeHtml(amountText)} · ${escapeHtml(idText)}</div><div class="row-small">→ ${escapeHtml(receiverName)}</div></div>`;
+      }).join('');
+    }
+  }
+}
+
 function updatePlayerList(playerArray = null) {
   const listContainer = document.getElementById('playerList');
   const countBadge = document.getElementById('playerCount');
@@ -1241,11 +1594,13 @@ document.getElementById('togglePlayerIconsBtn').addEventListener('click', functi
 let lastChatStatus = '';
 let pendingUpdate = false;
 async function pollPlayers() {
-  if (!API_URL || !API_PASSWORD) return;
+  const fetchUrl = TRACKING_URL || API_URL;
+  if (!fetchUrl || !API_PASSWORD) return;
   if (pendingUpdate) return;  // Continue polling even when window is hidden
   pendingUpdate = true;
   try {
-    const res = await fetchWithProxy(`${API_URL}?password=${encodeURIComponent(API_PASSWORD)}`);
+    const useProxy = !TRACKING_URL;
+    const res = await fetchWithProxy(`${fetchUrl}?password=${encodeURIComponent(API_PASSWORD)}`, {}, useProxy);
     const json = await res.json();
     if (!json.succeeded) { pendingUpdate = false; return; }
 
@@ -1547,6 +1902,11 @@ function setupColorControls() {
 }
 initializeColorPalette();
 setupColorControls();
+loadDeliverySitesData();
+const deliverySiteCloseBtn = document.getElementById('deliverySiteCloseBtn');
+if (deliverySiteCloseBtn) {
+  deliverySiteCloseBtn.addEventListener('click', closeDeliverySitePanel);
+}
 
 // ── Color Export / Import ─────────────────────────────────────────────────────
 document.getElementById('exportColorsBtn').addEventListener('click', async () => {
@@ -1724,6 +2084,7 @@ function getCurrentConfig() {
   return {
     config_source: 'manual',
     api_base: '',
+    tracking_base: '',
     chat_history_url: '',
     api_password: '',
     allow_all: false,
@@ -1736,23 +2097,47 @@ function getCurrentConfig() {
   };
 }
 
+function applyStoredConfig(config) {
+  if (!config) return;
+  if (config.api_base) {
+    API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
+    CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
+  }
+  if (config.tracking_base) {
+    TRACKING_BASE = config.tracking_base.replace(/\/$/, '');
+    TRACKING_URL = TRACKING_BASE + '/tracking/players';
+  }
+  if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
+  if (config.api_password) API_PASSWORD = config.api_password;
+  if (config.locationTracking) {
+    applyLocationTrackingConfig(config.locationTracking);
+  }
+  if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
+  else ALLOW_ALL = true;
+}
+
 function loadConfigFromStorage() {
+  let loadedLocal = false;
   const stored = localStorage.getItem('mtconfig');
   if (stored) {
     try {
       const config = JSON.parse(stored);
-      if (config.api_base) {
-        API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
-        CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
-      }
-      if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-      if (config.api_password) API_PASSWORD = config.api_password;
-      if (config.locationTracking) {
-        applyLocationTrackingConfig(config.locationTracking);
-      }
-      if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
-      else ALLOW_ALL = true;
+      applyStoredConfig(config);
+      loadedLocal = true;
     } catch (e) {}
+  }
+
+  if (!loadedLocal && window.electronAPI?.getStoredConfig) {
+    window.electronAPI.getStoredConfig()
+      .then(config => {
+        if (config && config.api_base) {
+          applyStoredConfig(config);
+          if (pollInterval || chatPollInterval) {
+            restartPolling();
+          }
+        }
+      })
+      .catch(() => {});
   }
 }
 
@@ -1774,11 +2159,12 @@ function populateManualFields() {
   // In Electron (local app), pre-fill fields for convenience since the config
   // is stored locally and only the machine owner can access it.
   const canReveal = IS_ELECTRON && !isEncryptedSource;
-  const config = canReveal ? currentCfg : { api_base: '', chat_history_url: '', api_password: '' };
+  const config = canReveal ? currentCfg : { api_base: '', tracking_base: '', chat_history_url: '', api_password: '' };
   document.getElementById('apiBaseUrl').type = 'password';
   document.getElementById('chatHistoryUrl').type = 'password';
   document.getElementById('apiPassword').type = 'password';
   document.getElementById('apiBaseUrl').value = config.api_base || '';
+  document.getElementById('trackingBaseUrl').value = config.tracking_base || '';
   document.getElementById('chatHistoryUrl').value = config.chat_history_url || '';
   document.getElementById('apiPassword').value = config.api_password || '';
   const corsProxyEl = document.getElementById('corsProxy');
@@ -1874,6 +2260,7 @@ function setupBlurToggle(inputId, buttonId, isPassword) {
 
 setupBlurToggle('apiPassword', 'togglePassword', true);
 setupBlurToggle('apiBaseUrl', 'toggleBaseUrl', true);
+setupBlurToggle('trackingBaseUrl', 'toggleTrackingBaseUrl', true);
 setupBlurToggle('chatHistoryUrl', 'toggleChatUrl', true);
 
 
@@ -1931,10 +2318,13 @@ function saveManualConfig() {
 
   saveConfigToStorage({
     ...config,
+    tracking_base: document.getElementById('trackingBaseUrl').value.trim(),
     locationTracking
   });
   API_PASSWORD = config.api_password;
   API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
+  TRACKING_BASE = config.tracking_base ? config.tracking_base.replace(/\/$/, '') : '';
+  TRACKING_URL = TRACKING_BASE ? TRACKING_BASE + '/tracking/players' : '';
   CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
   if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
   ALLOW_ALL = true;
@@ -3014,6 +3404,7 @@ function closeAllPanels() {
   document.getElementById('sidebarRacesMgrBtn').classList.remove('active');
   document.body.classList.remove('players-panel-open', 'races-panel-open');
   document.body.classList.remove('heatmap-panel-open');
+  document.body.classList.remove('chat-sidebar-open');
   // Also close heatmap panel
   document.getElementById('heatmapPanel').classList.remove('open');
   document.getElementById('sidebarHeatmapBtn').classList.remove('active');
@@ -3037,10 +3428,17 @@ document.getElementById('sidebarPlayersBtn').addEventListener('click', () => {
   closeAllPanels();
   if (!isOpen) {
     document.getElementById('playerListSidebar').classList.add('open');
-    if (ALLOW_ALL) document.getElementById('chatSidebar').classList.add('open');
+    if (ALLOW_ALL) {
+      document.getElementById('chatSidebar').classList.add('open');
+      document.body.classList.add('chat-sidebar-open');
+    }
     document.getElementById('sidebarPlayersBtn').classList.add('active');
     document.body.classList.add('players-panel-open');
   }
+});
+
+document.getElementById('sidebarDeliverySitesBtn').addEventListener('click', () => {
+  cycleDeliverySiteMarkers();
 });
 
 // Races & Checkpoints — left: checkpoint manager, right: races panel
