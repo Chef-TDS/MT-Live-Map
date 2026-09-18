@@ -76,10 +76,27 @@ const map = L.map("map", {
   fadeAnimation: false  
 });
 const bounds = [[0, 0], [MAP.height, MAP.width]];
-const imageLayer = L.imageOverlay('map_new.png', bounds, {
-  opacity: 1,
-  interactive: false,
-  crossOrigin: false
+const mapTiles = L.TileLayer.extend({
+  getTileUrl(coords) {
+    // Select a downsampled level while zoomed out; CRS.Simple uses negative tile Y values.
+    const level = Math.max(0, Math.min(4, -coords.z));
+    const scale = 2 ** level;
+    const levelRows = Math.ceil(Math.ceil(MAP.height / scale) / 256);
+    const imageRow = coords.y + levelRows;
+    return `map-tiles/${level}/${coords.x}/${imageRow}.png?v=3`;
+  }
+});
+new mapTiles('', {
+  tileSize: 256,
+  minZoom: -4,
+  maxZoom: 5,
+  minNativeZoom: -4,
+  maxNativeZoom: 0,
+  noWrap: true,
+  bounds,
+  updateWhenZooming: false,
+  keepBuffer: 1,
+  opacity: 1
 }).addTo(map);
 map.fitBounds(bounds);
 // Use a dedicated SVG renderer for the boundary so it repaints continuously
@@ -157,7 +174,7 @@ function updateMarkerRoleIcon(id) {
   const m = markers[id];
   if (!m) return;
   const newIcon = iconForPlayer(id);
-  m.setIcon(newIcon);
+  if (m.options.icon !== newIcon) m.setIcon(newIcon);
 }
 
 function updateMarkerZIndex(id) {
@@ -166,7 +183,7 @@ function updateMarkerZIndex(id) {
   let zIndex = 0;
   if (adminSet.has(id)) zIndex = 2000;
   else if (policeSet.has(id)) zIndex = 1000;
-  m.setZIndexOffset(zIndex);
+  if (m.options.zIndexOffset !== zIndex) m.setZIndexOffset(zIndex);
 }
 
 async function fetchRoles() {
@@ -221,7 +238,7 @@ function canMute() {
   return true;
 }
 
-// Send a mute command to the game server Web API
+// Mute player
 async function sendMute(uniqueId, hours = 0, reason = '') {
   try {
     if (!canMute()) throw new Error('Mute is only available for encrypted config with allow_all enabled.');
@@ -1024,6 +1041,7 @@ function updatePlayerList(playerArray = null) {
   const searchInput = document.getElementById('playerSearch');
   if (!listContainer || !countBadge || !titleEl) return;
   if (playerArray !== null) allPlayers = playerArray;
+  if (!document.getElementById('playerListSidebar')?.classList.contains('open')) return;
   const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
   const sourcePlayers = playerListMode === 'offline'
     ? Object.values(offlinePlayers)
@@ -1262,6 +1280,16 @@ function startSmoothLoop(id) {
     last = now;
 
     const speed = Math.sqrt(sm.velLat * sm.velLat + sm.velLng * sm.velLng);
+    const error = Math.sqrt(
+      (sm.trueLat - sm.lat) * (sm.trueLat - sm.lat) +
+      (sm.trueLng - sm.lng) * (sm.trueLng - sm.lng)
+    );
+    if (speed <= VEL_CUTOFF && error <= VEL_CUTOFF) {
+      sm.lat = sm.trueLat;
+      sm.lng = sm.trueLng;
+      sm.rafId = null;
+      return;
+    }
     if (speed > VEL_CUTOFF) {
       // Integrate velocity
       sm.lat += sm.velLat * dt;
@@ -1630,6 +1658,7 @@ async function pollPlayers() {
         markers[p.unique_id] = L.marker([mapY, mapX], { icon: iconForPlayer(p.unique_id), riseOnHover: false })
           .addTo(map)
           .bindPopup(popupContent, { closeButton: false, autoPan: false });
+        markers[p.unique_id]._popupContent = popupContent;
         // Click marker to open tracker
         markers[p.unique_id].on('click', () => {
           if (trackedPlayerId === p.unique_id) { closeTracker(); return; }
@@ -1648,7 +1677,10 @@ async function pollPlayers() {
       // Update popup with current vehicle info
       const vehicleDisplay = p.vehicle && p.vehicle.name ? `<div>${escapeHtml(p.vehicle.name)}</div>` : '';
       const popupContent = `${vehicleDisplay}<strong>${escapeHtml(p.name)}</strong>`;
-      markers[p.unique_id].setPopupContent(popupContent);
+      if (markers[p.unique_id]._popupContent !== popupContent) {
+        markers[p.unique_id].setPopupContent(popupContent);
+        markers[p.unique_id]._popupContent = popupContent;
+      }
 
     }
 
@@ -1680,9 +1712,19 @@ document.addEventListener('visibilitychange', () => {
   isVisible = !document.hidden;
   if (isVisible) {
     console.log('Window visible - resuming updates');
+    for (const id in markerSmooth) {
+      if (!markerSmooth[id].rafId) startSmoothLoop(id);
+    }
     pollPlayers();
   } else {
-    console.log('Window hidden - keeping chat polling active');
+    console.log('Window hidden - pausing animation loops');
+    for (const id in markerSmooth) {
+      const sm = markerSmooth[id];
+      if (sm.rafId) {
+        cancelAnimationFrame(sm.rafId);
+        sm.rafId = null;
+      }
+    }
   }
 });
 // chat status helper — must be defined before pollIncomingChat is called
@@ -3450,6 +3492,7 @@ document.getElementById('sidebarPlayersBtn').addEventListener('click', () => {
     }
     document.getElementById('sidebarPlayersBtn').classList.add('active');
     document.body.classList.add('players-panel-open');
+    updatePlayerList();
   }
 });
 
