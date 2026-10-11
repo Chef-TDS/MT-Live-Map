@@ -27,12 +27,83 @@ function setApiConfig(config) {
   else ALLOW_ALL = true;
 }
 
+// ── Stored config ─────────────────────────────────────────────────────────────
+// An encrypted config is persisted as its encrypted payload only. The decrypted
+// fields (URLs, password) are rebuilt in memory on load, so they are never
+// written to localStorage in plain text.
+//
+// This keeps secrets out of storage but is NOT real protection: the AES key below
+// ships with the app, and the password has to sit in memory to be used. Anyone who
+// can read the app can still recover it. Real protection means the server password
+// never reaches the client at all (e.g. a gateway that issues per-user tokens).
+const ENCRYPTION_KEY = 'mttrackingapp-v1';
+
+function encryptConfig(config) {
+  const jsonStr = JSON.stringify(config);
+  return CryptoJS.AES.encrypt(jsonStr, ENCRYPTION_KEY).toString();
+}
+
+function decryptConfig(encryptedText) {
+  try {
+    const bytes = CryptoJS.AES.decrypt(encryptedText, ENCRYPTION_KEY);
+    const jsonStr = bytes.toString(CryptoJS.enc.Utf8);
+    if (!jsonStr) throw new Error('Decryption failed');
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    return null;
+  }
+}
+
+// getCurrentConfig() is called often (e.g. once per player row), so decrypt once per payload.
+let _decryptCache = { payload: null, config: null };
+
+function decryptConfigCached(payload) {
+  if (_decryptCache.payload !== payload) {
+    _decryptCache = { payload, config: decryptConfig(payload) };
+  }
+  return _decryptCache.config;
+}
+
+// Fields that only ever belong inside the encrypted payload.
+const PAYLOAD_ONLY_KEYS = ['api_base', 'tracking_base', 'chat_history_url', 'api_password', 'allow_all'];
+
+/**
+ * Read 'mtconfig' from localStorage and return the usable config.
+ * Manual configs are returned as stored. For encrypted configs the sensitive
+ * fields come from decrypting the stored payload, and any plain-text copy left
+ * behind by older versions is removed from storage.
+ */
+function readStoredConfig() {
+  let stored = null;
+  try { stored = JSON.parse(localStorage.getItem('mtconfig')); } catch (e) {}
+  if (!stored) return null;
+  if (stored.config_source !== 'encrypted' || !stored.encrypted_payload) return stored;
+
+  const decrypted = decryptConfigCached(stored.encrypted_payload);
+  if (!decrypted) return stored; // can't decrypt right now (e.g. crypto-js failed to load)
+
+  if (PAYLOAD_ONLY_KEYS.some(k => k in stored)) {
+    const clean = {
+      config_source: 'encrypted',
+      encrypted_payload: stored.encrypted_payload,
+      locationTracking: stored.locationTracking
+    };
+    try { localStorage.setItem('mtconfig', JSON.stringify(clean)); } catch (e) {}
+  }
+
+  return {
+    ...decrypted,
+    config_source: 'encrypted',
+    encrypted_payload: stored.encrypted_payload,
+    locationTracking: stored.locationTracking || decrypted.locationTracking
+  };
+}
+
 // Load saved config immediately so it overrides the defaults above
 (function loadConfigFromStorageEarly() {
   try {
-    const stored = localStorage.getItem('mtconfig');
-    if (!stored) return;
-    const config = JSON.parse(stored);
+    const config = readStoredConfig();
+    if (!config) return;
     if (config.api_base) {
       API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
       CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
@@ -43,11 +114,11 @@ function setApiConfig(config) {
     }
     if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
     if (config.api_password) API_PASSWORD = config.api_password;
-    if (config.locationTracking) {
-      applyLocationTrackingConfig(config.locationTracking);
-    }
     if (config.config_source === 'encrypted') ALLOW_ALL = !!config.allow_all;
     else ALLOW_ALL = true;
+    // locationTracking is applied later by loadConfigFromStorage(): the state it
+    // writes to is declared further down this file and doesn't exist yet. Calling
+    // it from here threw before ALLOW_ALL was set, so chat polling never started.
   } catch(e) {}
 })();
 const MAP = {
@@ -315,7 +386,7 @@ const markers = {};
 let fireMarkers = {};
 let fireEnabled = false;
 const fireIcon = L.icon({
-  iconUrl: 'assets/Fire.png',
+  iconUrl: 'assets/fire.png',
   iconSize: [32, 32],
   iconAnchor: [16, 16],
   popupAnchor: [0, -16],
@@ -2101,28 +2172,10 @@ if (searchInput) {
   });
 }
 
-const ENCRYPTION_KEY = 'mttrackingapp-v1';
-
-function encryptConfig(config) {
-  const jsonStr = JSON.stringify(config);
-  return CryptoJS.AES.encrypt(jsonStr, ENCRYPTION_KEY).toString();
-}
-
-function decryptConfig(encryptedText) {
-  try {
-    const bytes = CryptoJS.AES.decrypt(encryptedText, ENCRYPTION_KEY);
-    const jsonStr = bytes.toString(CryptoJS.enc.Utf8);
-    if (!jsonStr) throw new Error('Decryption failed');
-    return JSON.parse(jsonStr);
-  } catch (e) {
-    return null;
-  }
-}
-
 function getCurrentConfig() {
   try {
-    const stored = localStorage.getItem('mtconfig');
-    if (stored) return JSON.parse(stored);
+    const stored = readStoredConfig();
+    if (stored) return stored;
   } catch (e) {}
   return {
     config_source: 'manual',
@@ -2159,14 +2212,13 @@ function applyStoredConfig(config) {
 
 function loadConfigFromStorage() {
   let loadedLocal = false;
-  const stored = localStorage.getItem('mtconfig');
-  if (stored) {
-    try {
-      const config = JSON.parse(stored);
+  try {
+    const config = readStoredConfig();
+    if (config) {
       applyStoredConfig(config);
       loadedLocal = true;
-    } catch (e) {}
-  }
+    }
+  } catch (e) {}
 
   if (!loadedLocal && window.electronAPI?.getStoredConfig) {
     window.electronAPI.getStoredConfig()
@@ -2406,6 +2458,7 @@ document.getElementById('cancelLocationTrackingBtn').addEventListener('click', (
 document.getElementById('resetConfigBtn').addEventListener('click', () => {
   if (!confirm('Remove all saved API config?')) return;
   localStorage.removeItem('mtconfig');
+  _decryptCache = { payload: null, config: null };
   // Clear in-memory values so polling stops working immediately
   API_PASSWORD = '';
   API_URL = '';
@@ -2440,20 +2493,24 @@ document.getElementById('applyEncryptedBtn').addEventListener('click', () => {
     return;
   }
 
-  saveConfigToStorage({
-    ...config,
-    config_source: 'encrypted',
-    encrypted_payload: encryptedText,
-    locationTracking: config.locationTracking || locationTrackingConfig
-  });
-  API_PASSWORD = config.api_password;
-  API_URL = config.api_base.replace(/\/$/, '') + '/player/list';
-  CHAT_API_URL = config.api_base.replace(/\/$/, '') + '/chat';
-  if (config.chat_history_url) CHAT_HISTORY_URL = config.chat_history_url;
-  ALLOW_ALL = !!config.allow_all;
-  if (config.locationTracking) {
-    applyLocationTrackingConfig(config.locationTracking);
+  if (!config.api_base || !config.api_password) {
+    alert('Invalid or corrupted encrypted config. Please check the code and try again.');
+    return;
   }
+
+  // Persist only the encrypted payload. The decrypted values stay in memory and
+  // are rebuilt from the payload on startup (see readStoredConfig).
+  try {
+    saveConfigToStorage({
+      config_source: 'encrypted',
+      encrypted_payload: encryptedText,
+      locationTracking: config.locationTracking || locationTrackingConfig
+    });
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+  applyStoredConfig({ ...config, config_source: 'encrypted' });
 
   settingsModal.classList.remove('active');
   restartPolling();
